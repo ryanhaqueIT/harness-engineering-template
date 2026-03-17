@@ -1,0 +1,121 @@
+# Claude Code Review — AI-powered PR review (harness engineering Layer 6).
+#
+# Runs on every PR open/update. Reviews the diff against:
+#   - AGENTS.md golden principles
+#   - Module dependency rules
+#   - QUALITY_SCORE.md grading rubric
+#   - OWASP top 10 security checks
+#   - Architecture invariants
+#
+# Posts a structured review comment on the PR.
+# Requires ANTHROPIC_API_KEY in repository secrets.
+
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    # Skip review on draft PRs and dependabot
+    if: github.event.pull_request.draft == false && github.actor != 'dependabot[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get PR diff
+        id: diff
+        run: |
+          # Get the diff between base and head
+          git diff origin/${{ github.base_ref }}...HEAD > /tmp/pr_diff.txt
+
+          # Truncate if over 100KB to stay within Claude context limits
+          DIFF_SIZE=$(wc -c < /tmp/pr_diff.txt)
+          if [ "$DIFF_SIZE" -gt 100000 ]; then
+            echo "Diff is ${DIFF_SIZE} bytes — truncating to 100KB"
+            head -c 100000 /tmp/pr_diff.txt > /tmp/pr_diff_truncated.txt
+            mv /tmp/pr_diff_truncated.txt /tmp/pr_diff.txt
+            echo "truncated=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "truncated=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Count changed files for the summary
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | wc -l)
+          echo "changed_files=$CHANGED_FILES" >> "$GITHUB_OUTPUT"
+
+      - name: Gather project context
+        run: |
+          # Collect AGENTS.md and QUALITY_SCORE.md so Claude has the standards
+          echo "=== AGENTS.md ===" > /tmp/context.txt
+          cat AGENTS.md >> /tmp/context.txt 2>/dev/null || echo "(not found)" >> /tmp/context.txt
+          echo "" >> /tmp/context.txt
+          echo "=== docs/QUALITY_SCORE.md ===" >> /tmp/context.txt
+          cat docs/QUALITY_SCORE.md >> /tmp/context.txt 2>/dev/null || echo "(not found)" >> /tmp/context.txt
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Run AI Code Review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          TRUNCATION_NOTE=""
+          if [ "${{ steps.diff.outputs.truncated }}" = "true" ]; then
+            TRUNCATION_NOTE="NOTE: Diff was truncated to 100KB. Some files may not be reviewed."
+          fi
+
+          claude --print "You are a senior code reviewer enforcing harness engineering standards.
+
+          PROJECT STANDARDS:
+          $(cat /tmp/context.txt)
+
+          REVIEW CHECKLIST:
+          1. Golden Principles — no print(), no hardcoded secrets, structured logging only, type hints on all functions
+          2. Module Boundaries — check import DAG from AGENTS.md. Routers must not import db/AI layers directly.
+          3. Architecture — one concern per file, no God files (>300 lines needs justification), clear separation of layers
+          4. Test Coverage — every new source file should have a corresponding test file. Flag untested code.
+          5. Security (OWASP top 10) — injection, broken auth, sensitive data exposure, XXE, broken access control, misconfig, XSS, insecure deserialization, known vulns, insufficient logging
+          6. Performance — N+1 queries, missing async/await, blocking calls in async context, unbounded loops
+          7. Reliability — no bare except, timeouts on external calls, graceful error handling, correlation IDs in logs
+
+          SCORING (from docs/QUALITY_SCORE.md):
+          - Code Quality: 1-5 (minimum 3 to pass)
+          - Test Quality: 1-5 (minimum 3 to pass)
+          - Architecture: 1-5 (minimum 4 to pass)
+          - Security: pass/fail
+          - Reliability: pass/fail
+
+          OUTPUT FORMAT:
+          Start with a one-line verdict: LGTM, APPROVED WITH NOTES, or CHANGES REQUESTED.
+          Then list each issue as: \`file:line\` | severity (critical/warning/info) | description and fix instruction.
+          End with the quality scores.
+          If no issues: say 'LGTM — all checks pass' with scores.
+
+          ${TRUNCATION_NOTE}
+
+          DIFF TO REVIEW (${{ steps.diff.outputs.changed_files }} files changed):
+          $(cat /tmp/pr_diff.txt)" > /tmp/review.md
+
+      - name: Post review comment
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Build the comment body
+          {
+            echo "## Claude Code Review"
+            echo ""
+            cat /tmp/review.md
+            echo ""
+            echo "---"
+            echo "*Automated review by Claude Code (harness engineering Layer 6) | ${{ steps.diff.outputs.changed_files }} files changed*"
+          } > /tmp/comment.md
+
+          gh pr comment ${{ github.event.pull_request.number }} --body-file /tmp/comment.md

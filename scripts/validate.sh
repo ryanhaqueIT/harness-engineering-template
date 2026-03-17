@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # validate.sh — THE UNIVERSAL GATE. Every line of code passes through here.
 #
+# Total gates: 21 (B1-B7 backend, F1-F7 frontend, I1-I2 infra, X1-X4 cross-stack, R1 ratchet)
+#
 # This is the ONLY way to declare code "ready." No exceptions. No shortcuts.
 # Subagents, main agents, humans — everyone runs this before committing.
 #
@@ -211,6 +213,17 @@ if [ -d "$FRONTEND_DIR" ] && [ -f "$FRONTEND_DIR/package.json" ]; then
         else
             skip "  [F6] UI legibility" "run with RUN_UI=true or after building"
         fi
+
+        # Gate F7: Playwright browser tests (if Playwright installed)
+        if command -v npx &>/dev/null && npx playwright --version &>/dev/null 2>&1; then
+            if [ -f "${REPO_ROOT}/scripts/check_ui_playwright.sh" ]; then
+                check "  [F7] Playwright browser tests (Layer 5)" bash "${REPO_ROOT}/scripts/check_ui_playwright.sh"
+            else
+                skip "  [F7] Playwright browser tests" "scripts/check_ui_playwright.sh not found"
+            fi
+        else
+            skip "  [F7] Playwright browser tests" "playwright not installed — run 'npx playwright install chromium'"
+        fi
     else
         skip "FRONTEND" "run 'cd frontend && npm install' first"
     fi
@@ -328,6 +341,13 @@ else
 fi
 
 echo ""
+
+# Gate O1: Layer 6 — Observability health (if stack is running)
+if curl -s http://localhost:8428/health &>/dev/null && curl -s http://localhost:9428/health &>/dev/null; then
+    check "  [O1] Observability (Layer 6)" bash "${REPO_ROOT}/scripts/check_observability.sh"
+else
+    skip "  [O1] Observability (Layer 6)" "stack not running — docker compose -f docker-compose.observability.yml up -d"
+fi
 
 # Gate R1: Ratchet check (quality can only improve, never regress)
 if [ -f "${REPO_ROOT}/scripts/ratchet.py" ]; then

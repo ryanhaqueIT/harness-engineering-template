@@ -1,0 +1,66 @@
+name: Auto Refactor (Entropy Cleanup)
+on:
+  schedule:
+    - cron: '0 2 * * 1'  # Monday 2am UTC
+  workflow_dispatch:
+
+jobs:
+  entropy-cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: pip install ruff
+
+      - name: Auto-fix lint issues
+        run: |
+          if [ -d backend ]; then
+            cd backend
+            ruff check --fix . || true
+            ruff format . || true
+            cd ..
+          fi
+
+      - name: Check for changes
+        id: changes
+        run: |
+          if [ -n "$(git diff --name-only)" ]; then
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create PR
+        if: steps.changes.outputs.has_changes == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          BRANCH="auto-refactor/$(date +%Y%m%d)"
+          git checkout -b "$BRANCH"
+          git add -A
+          git commit -m "refactor: automated entropy cleanup (ruff auto-fix)
+
+          Weekly auto-refactoring PR from harness engineering entropy management.
+          All changes are mechanical (ruff --fix + ruff format).
+
+          Co-Authored-By: Entropy Cleaner Agent <noreply@harness.engineering>"
+          git push origin "$BRANCH"
+          gh pr create \
+            --title "refactor: weekly entropy cleanup $(date +%Y-%m-%d)" \
+            --body "$(cat <<'BODY'
+          ## Automated Entropy Cleanup
+
+          This PR was created automatically by the entropy management workflow.
+          All changes are mechanical fixes from ruff auto-fix and formatting.
+
+          **Review quickly and merge — these are safe, deterministic changes.**
+          BODY
+          )"  \
+            --base main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

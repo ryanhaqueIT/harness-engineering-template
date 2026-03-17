@@ -143,6 +143,41 @@ jobs:
           fi
 
   # =================================================================
+  # LEGIBILITY — Playwright browser tests (Layer 5)
+  # =================================================================
+  legibility:
+    runs-on: ubuntu-latest
+    needs: [frontend]
+    if: hashFiles('frontend/package.json') != ''
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install frontend dependencies
+        run: cd frontend && npm install
+
+      - name: Install Playwright chromium
+        run: npx playwright install chromium --with-deps
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          if [ -f next.config.js ] || [ -f next.config.ts ] || [ -f next.config.mjs ]; then
+            npx next build
+          elif [ -f vite.config.ts ] || [ -f vite.config.js ]; then
+            npx vite build
+          elif grep -q '"build"' package.json; then
+            npm run build
+          fi
+
+      - name: "Gate F7: Playwright browser tests (Layer 5)"
+        run: bash scripts/check_ui_playwright.sh
+
+  # =================================================================
   # CROSS-STACK VALIDATION
   # =================================================================
   cross-stack:
