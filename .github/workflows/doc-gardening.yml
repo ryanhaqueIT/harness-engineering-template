@@ -1,0 +1,191 @@
+# Doc-Gardening — weekly entropy cleanup for documentation drift.
+#
+# Runs every Sunday at midnight UTC. Checks:
+#   1. Files referenced in AGENTS.md actually exist
+#   2. Orphan markdown docs not referenced by any other document
+#   3. TODO/FIXME/HACK comment counts in source code
+#
+# Opens a GitHub issue if any problems are found.
+
+name: Doc Gardening
+
+on:
+  schedule:
+    - cron: "0 0 * * 0"  # Every Sunday at midnight UTC
+  workflow_dispatch: {}   # Manual trigger for testing
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check AGENTS.md cross-references
+        id: agents_refs
+        run: |
+          echo "=== Checking files referenced in AGENTS.md ==="
+          BROKEN=0
+          REPORT=""
+
+          if [ ! -f AGENTS.md ]; then
+            echo "No AGENTS.md found — skipping"
+            echo "agents_broken=0" >> "$GITHUB_OUTPUT"
+            echo "" > /tmp/agents_report.txt
+            exit 0
+          fi
+
+          REFS=$(grep -oE '[a-zA-Z0-9_./-]+\.(md|py|sh|ts|tsx|json|yml|yaml)' AGENTS.md \
+            | grep -v 'node_modules' \
+            | grep -v '.venv' \
+            | grep -v '^http' \
+            | sort -u)
+
+          for ref in $REFS; do
+            if echo "$ref" | grep -qE '^\*|^<|foo\.py|example'; then continue; fi
+            if [ ! -f "$ref" ]; then
+              echo "  BROKEN: AGENTS.md references '$ref' — file does not exist"
+              REPORT="${REPORT}- \`AGENTS.md\` references \`${ref}\` — file does not exist\n"
+              BROKEN=$((BROKEN + 1))
+            else
+              echo "  OK: $ref"
+            fi
+          done
+
+          echo "agents_broken=$BROKEN" >> "$GITHUB_OUTPUT"
+          echo -e "$REPORT" > /tmp/agents_report.txt
+
+      - name: Detect orphan markdown files
+        id: orphans
+        run: |
+          echo "=== Checking for orphan markdown files ==="
+          ORPHAN_COUNT=0
+          REPORT=""
+
+          MDFILES=$(find . -name "*.md" \
+            -not -path "./.git/*" \
+            -not -path "./.venv/*" \
+            -not -path "*/node_modules/*" \
+            | sed 's|^\./||' \
+            | sort)
+
+          for mdfile in $MDFILES; do
+            basename_md=$(basename "$mdfile")
+
+            # Skip entry points
+            if echo "$mdfile" | grep -qE '^(AGENTS|README|ARCHITECTURE|STRATEGY|PLANS)\.md$'; then
+              continue
+            fi
+
+            REFERENCED=$(grep -rl --include="*.md" --include="*.py" --include="*.yml" --include="*.yaml" --include="*.ts" --include="*.tsx" \
+              -e "$mdfile" -e "$basename_md" \
+              . 2>/dev/null \
+              | grep -v ".git/" \
+              | grep -v "node_modules/" \
+              | grep -v ".venv/" \
+              | grep -v "$mdfile" \
+              | head -1)
+
+            if [ -z "$REFERENCED" ]; then
+              echo "  ORPHAN: $mdfile"
+              REPORT="${REPORT}- \`${mdfile}\` — not referenced by any other document\n"
+              ORPHAN_COUNT=$((ORPHAN_COUNT + 1))
+            fi
+          done
+
+          echo "orphan_count=$ORPHAN_COUNT" >> "$GITHUB_OUTPUT"
+          echo -e "$REPORT" > /tmp/orphan_report.txt
+
+      - name: Count TODO/FIXME/HACK comments
+        id: todos
+        run: |
+          echo "=== Scanning for TODO/FIXME/HACK ==="
+
+          TODO_COUNT=$(grep -rn --include="*.py" --include="*.ts" --include="*.tsx" --include="*.js" --include="*.go" --include="*.rs" \
+            -E '\b(TODO|FIXME|HACK|XXX)\b' \
+            . \
+            --exclude-dir=.venv \
+            --exclude-dir=__pycache__ \
+            --exclude-dir=node_modules \
+            --exclude-dir=.git \
+            --exclude-dir=target \
+            2>/dev/null | wc -l || echo "0")
+
+          TODO_COUNT=$(echo "$TODO_COUNT" | tr -d '[:space:]')
+          echo "todo_count=$TODO_COUNT" >> "$GITHUB_OUTPUT"
+
+          if [ "$TODO_COUNT" -gt 0 ]; then
+            grep -rn --include="*.py" --include="*.ts" --include="*.tsx" --include="*.js" \
+              -E '\b(TODO|FIXME|HACK|XXX)\b' \
+              . \
+              --exclude-dir=.venv --exclude-dir=__pycache__ --exclude-dir=node_modules --exclude-dir=.git \
+              2>/dev/null | head -20 > /tmp/todo_report.txt
+          else
+            echo "" > /tmp/todo_report.txt
+          fi
+
+      - name: Open GitHub issue if problems found
+        if: >-
+          steps.agents_refs.outputs.agents_broken != '0' ||
+          steps.orphans.outputs.orphan_count != '0' ||
+          steps.todos.outputs.todo_count != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          AGENTS_BROKEN=${{ steps.agents_refs.outputs.agents_broken }}
+          ORPHAN_COUNT=${{ steps.orphans.outputs.orphan_count }}
+          TODO_COUNT=${{ steps.todos.outputs.todo_count }}
+
+          BODY="## Doc Gardening Report — $(date -u +%Y-%m-%d)
+
+          Automated weekly scan found documentation entropy that needs attention.
+
+          ### Summary
+
+          | Check | Count | Status |
+          |-------|-------|--------|
+          | Broken refs in AGENTS.md | ${AGENTS_BROKEN} | $([ "$AGENTS_BROKEN" = "0" ] && echo 'Clean' || echo 'Needs fix') |
+          | Orphan markdown files | ${ORPHAN_COUNT} | $([ "$ORPHAN_COUNT" = "0" ] && echo 'Clean' || echo 'Review needed') |
+          | TODO/FIXME/HACK comments | ${TODO_COUNT} | $([ "$TODO_COUNT" = "0" ] && echo 'Clean' || echo 'Review needed') |
+          "
+
+          if [ "$AGENTS_BROKEN" != "0" ]; then
+            BODY="${BODY}
+          ### Broken References in AGENTS.md
+
+          $(cat /tmp/agents_report.txt)
+          "
+          fi
+
+          if [ "$ORPHAN_COUNT" != "0" ]; then
+            BODY="${BODY}
+          ### Orphan Markdown Files
+
+          $(cat /tmp/orphan_report.txt)
+          "
+          fi
+
+          if [ "$TODO_COUNT" != "0" ]; then
+            BODY="${BODY}
+          ### TODO/FIXME/HACK Comments ($TODO_COUNT total)
+
+          \`\`\`
+          $(cat /tmp/todo_report.txt)
+          \`\`\`
+          "
+          fi
+
+          BODY="${BODY}
+          ---
+          *Generated by doc-gardening workflow.*
+          "
+
+          gh issue create \
+            --title "Doc Gardening: $(date -u +%Y-%m-%d) — ${AGENTS_BROKEN} broken refs, ${ORPHAN_COUNT} orphans, ${TODO_COUNT} TODOs" \
+            --body "$BODY" \
+            --label "documentation,automation"

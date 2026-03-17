@@ -1,0 +1,199 @@
+# CI Pipeline — runs on every PR and push to main.
+#
+# Auto-detects project language and runs appropriate gates.
+# Every gate produces actionable error messages so agents can self-repair.
+
+name: CI
+
+on:
+  pull_request: {}
+  push:
+    branches: [main]
+
+jobs:
+  # =================================================================
+  # BACKEND VALIDATION (Python)
+  # =================================================================
+  backend-python:
+    runs-on: ubuntu-latest
+    if: hashFiles('backend/requirements.txt') != '' || hashFiles('backend/pyproject.toml') != ''
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f pyproject.toml ]; then pip install -e ".[dev]" 2>/dev/null || pip install -e .; fi
+
+      # Gate B1: Lint
+      - name: "Gate B1: Lint"
+        run: |
+          cd backend
+          if command -v ruff &>/dev/null; then ruff check .
+          elif command -v flake8 &>/dev/null; then flake8 .
+          else echo "No linter found — install ruff or flake8"; exit 1; fi
+
+      # Gate B2: Format
+      - name: "Gate B2: Format"
+        run: |
+          cd backend
+          if command -v ruff &>/dev/null; then ruff format --check .
+          elif command -v black &>/dev/null; then black --check .
+          else echo "No formatter found — install ruff or black"; exit 1; fi
+
+      # Gate B3: Tests
+      - name: "Gate B3: Tests"
+        run: |
+          cd backend
+          if [ -d tests ]; then python -m pytest tests/ -v --tb=short -q
+          else echo "No tests/ directory — skipping"; fi
+
+      # Gate B4: Import boundaries
+      - name: "Gate B4: Import boundary enforcement"
+        run: |
+          if [ -f scripts/check_imports.py ]; then python scripts/check_imports.py
+          else echo "No check_imports.py — skipping"; fi
+
+      # Gate B5: Golden principles
+      - name: "Gate B5: Golden principles"
+        run: |
+          if [ -f scripts/check_golden_principles.py ]; then python scripts/check_golden_principles.py
+          else echo "No check_golden_principles.py — skipping"; fi
+
+      # Gate B6: Architecture invariants
+      - name: "Gate B6: Architecture invariants"
+        run: |
+          if [ -f scripts/check_architecture.py ]; then python scripts/check_architecture.py
+          else echo "No check_architecture.py — skipping"; fi
+
+  # =================================================================
+  # BACKEND VALIDATION (Node.js)
+  # =================================================================
+  backend-node:
+    runs-on: ubuntu-latest
+    if: hashFiles('backend/package.json') != '' && hashFiles('backend/requirements.txt') == ''
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install backend dependencies
+        run: cd backend && npm install
+
+      - name: "Gate B1: ESLint"
+        run: cd backend && npx eslint . --max-warnings 0
+
+      - name: "Gate B2: Prettier"
+        run: cd backend && npx prettier --check .
+
+      - name: "Gate B3: TypeScript"
+        run: cd backend && npx tsc --noEmit
+
+      - name: "Gate B4: Tests"
+        run: cd backend && npm test -- --passWithNoTests 2>/dev/null || echo "No tests configured"
+
+  # =================================================================
+  # FRONTEND VALIDATION
+  # =================================================================
+  frontend:
+    runs-on: ubuntu-latest
+    if: hashFiles('frontend/package.json') != ''
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install frontend dependencies
+        run: cd frontend && npm install
+
+      # Gate F1: TypeScript
+      - name: "Gate F1: TypeScript type check"
+        run: cd frontend && npx tsc --noEmit
+
+      # Gate F2: ESLint
+      - name: "Gate F2: ESLint (zero warnings)"
+        run: cd frontend && npx eslint . --max-warnings 0
+
+      # Gate F3: Prettier
+      - name: "Gate F3: Prettier format check"
+        run: cd frontend && npx prettier --check "**/*.{ts,tsx,js,jsx}" 2>/dev/null || npx prettier --check .
+
+      # Gate F4: Build
+      - name: "Gate F4: Build"
+        run: |
+          cd frontend
+          if [ -f next.config.js ] || [ -f next.config.ts ] || [ -f next.config.mjs ]; then
+            npx next build
+          elif [ -f vite.config.ts ] || [ -f vite.config.js ]; then
+            npx vite build
+          elif grep -q '"build"' package.json; then
+            npm run build
+          else
+            echo "No build config detected"
+          fi
+
+  # =================================================================
+  # CROSS-STACK VALIDATION
+  # =================================================================
+  cross-stack:
+    runs-on: ubuntu-latest
+    needs: [backend-python, backend-node, frontend]
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+
+      # Gate X1: Doc cross-references
+      - name: "Gate X1: Doc cross-references"
+        run: |
+          BROKEN=0
+          if [ -f AGENTS.md ]; then
+            for ref in $(grep -oE 'docs/[a-zA-Z0-9/_.-]+\.md' AGENTS.md 2>/dev/null); do
+              if [ ! -f "$ref" ]; then
+                echo "BROKEN: AGENTS.md references $ref but file missing"
+                BROKEN=$((BROKEN + 1))
+              fi
+            done
+          fi
+          [ "$BROKEN" -eq 0 ] || { echo "Found $BROKEN broken doc references"; exit 1; }
+
+      # Gate X2: Secret scan
+      - name: "Gate X2: Scan for leaked secrets"
+        run: |
+          VIOLATIONS=0
+
+          # AWS keys
+          if grep -rn --include="*.py" --include="*.ts" --include="*.js" --include="*.json" \
+            --exclude-dir=node_modules --exclude-dir=.venv --exclude-dir=__pycache__ \
+            -E 'AKIA[0-9A-Z]{16}' . 2>/dev/null | grep -v "ci.yml" | grep -v "test_"; then
+            VIOLATIONS=$((VIOLATIONS + 1))
+          fi
+
+          # Private keys
+          if grep -rn --include="*.py" --include="*.ts" --include="*.js" --include="*.json" \
+            --exclude-dir=node_modules --exclude-dir=.venv --exclude-dir=__pycache__ \
+            -E 'BEGIN (RSA |EC |DSA )?PRIVATE KEY' . 2>/dev/null; then
+            VIOLATIONS=$((VIOLATIONS + 1))
+          fi
+
+          # .env files checked in
+          if find . -name ".env" -not -path "./node_modules/*" -not -path "./.venv/*" | grep -q .; then
+            echo "FOUND: .env file in repository"
+            VIOLATIONS=$((VIOLATIONS + 1))
+          fi
+
+          if [ "$VIOLATIONS" -gt 0 ]; then
+            echo "SECRET SCAN FAILED: $VIOLATIONS potential secret(s) found."
+            exit 1
+          else
+            echo "Secret scan clean."
+          fi

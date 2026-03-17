@@ -1,0 +1,221 @@
+# Quality Scan — daily background entropy detection for code quality drift.
+#
+# Runs daily at 6am UTC. Checks:
+#   1. Lint (language-appropriate)
+#   2. Format check
+#   3. Architecture invariants (if check script exists)
+#   4. Golden principles (if check script exists)
+#   5. Test count
+#   6. Lines of code
+#   7. Quality summary dashboard
+
+name: Quality Scan
+
+on:
+  schedule:
+    - cron: "0 6 * * *"  # Every day at 6am UTC
+  workflow_dispatch: {}   # Manual trigger for testing
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ─── Detect language and install ────────────────────────────────
+
+      - name: Detect project type
+        id: detect
+        run: |
+          if [ -f backend/requirements.txt ] || [ -f backend/pyproject.toml ]; then
+            echo "backend_type=python" >> "$GITHUB_OUTPUT"
+          elif [ -f backend/package.json ]; then
+            echo "backend_type=node" >> "$GITHUB_OUTPUT"
+          else
+            echo "backend_type=none" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.detect.outputs.backend_type == 'python'
+        with:
+          python-version: "3.12"
+
+      - name: Install Python backend
+        if: steps.detect.outputs.backend_type == 'python'
+        run: |
+          cd backend
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f pyproject.toml ]; then pip install -e ".[dev]" 2>/dev/null || pip install -e .; fi
+
+      - uses: actions/setup-node@v4
+        if: steps.detect.outputs.backend_type == 'node'
+        with:
+          node-version: "20"
+
+      - name: Install Node backend
+        if: steps.detect.outputs.backend_type == 'node'
+        run: cd backend && npm install
+
+      # ─── Gate checks ────────────────────────────────────────────────
+
+      - name: "Lint check"
+        id: lint
+        continue-on-error: true
+        run: |
+          cd backend
+          if [ "${{ steps.detect.outputs.backend_type }}" = "python" ]; then
+            if command -v ruff &>/dev/null; then
+              ruff check . 2>&1 && echo "status=pass" >> "$GITHUB_OUTPUT" || echo "status=fail" >> "$GITHUB_OUTPUT"
+            else
+              echo "status=skip" >> "$GITHUB_OUTPUT"
+            fi
+          elif [ "${{ steps.detect.outputs.backend_type }}" = "node" ]; then
+            npx eslint . --max-warnings 0 2>&1 && echo "status=pass" >> "$GITHUB_OUTPUT" || echo "status=fail" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=skip" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: "Format check"
+        id: format
+        continue-on-error: true
+        run: |
+          cd backend
+          if [ "${{ steps.detect.outputs.backend_type }}" = "python" ]; then
+            if command -v ruff &>/dev/null; then
+              ruff format --check . 2>&1 && echo "status=pass" >> "$GITHUB_OUTPUT" || echo "status=fail" >> "$GITHUB_OUTPUT"
+            else
+              echo "status=skip" >> "$GITHUB_OUTPUT"
+            fi
+          elif [ "${{ steps.detect.outputs.backend_type }}" = "node" ]; then
+            npx prettier --check . 2>&1 && echo "status=pass" >> "$GITHUB_OUTPUT" || echo "status=fail" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=skip" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: "Architecture check"
+        id: architecture
+        continue-on-error: true
+        run: |
+          if [ -f scripts/check_architecture.py ]; then
+            python scripts/check_architecture.py 2>&1 && echo "status=pass" >> "$GITHUB_OUTPUT" || echo "status=fail" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=skip" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: "Golden Principles check"
+        id: golden
+        continue-on-error: true
+        run: |
+          if [ -f scripts/check_golden_principles.py ]; then
+            python scripts/check_golden_principles.py 2>&1 && echo "status=pass" >> "$GITHUB_OUTPUT" || echo "status=fail" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=skip" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ─── Metrics ────────────────────────────────────────────────────
+
+      - name: Count tests
+        id: tests
+        continue-on-error: true
+        run: |
+          if [ "${{ steps.detect.outputs.backend_type }}" = "python" ] && [ -d backend/tests ]; then
+            TEST_COUNT=$(cd backend && python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1 | grep -oE '^[0-9]+' || echo "0")
+          elif [ "${{ steps.detect.outputs.backend_type }}" = "node" ]; then
+            TEST_COUNT="N/A"
+          else
+            TEST_COUNT="0"
+          fi
+          echo "count=$TEST_COUNT" >> "$GITHUB_OUTPUT"
+
+      - name: Count lines of code
+        id: loc
+        run: |
+          # Count source LOC across common languages
+          SOURCE_LOC=0
+          TEST_LOC=0
+          SOURCE_FILES=0
+          TEST_FILES=0
+
+          # Python
+          if [ -d backend ]; then
+            PY_SOURCE=$(find backend -name "*.py" -not -path "*/tests/*" -not -path "*/.venv/*" -not -path "*/__pycache__/*" -not -path "*/site-packages/*" -not -name "__init__.py" -exec cat {} + 2>/dev/null | wc -l | tr -d '[:space:]')
+            PY_TEST=$(find backend -path "*/tests/*.py" -not -path "*/__pycache__/*" -exec cat {} + 2>/dev/null | wc -l | tr -d '[:space:]')
+            PY_SRC_FILES=$(find backend -name "*.py" -not -path "*/tests/*" -not -path "*/.venv/*" -not -path "*/__pycache__/*" -not -path "*/site-packages/*" -not -name "__init__.py" 2>/dev/null | wc -l | tr -d '[:space:]')
+            PY_TEST_FILES=$(find backend -path "*/tests/test_*.py" 2>/dev/null | wc -l | tr -d '[:space:]')
+
+            SOURCE_LOC=$((SOURCE_LOC + PY_SOURCE))
+            TEST_LOC=$((TEST_LOC + PY_TEST))
+            SOURCE_FILES=$((SOURCE_FILES + PY_SRC_FILES))
+            TEST_FILES=$((TEST_FILES + PY_TEST_FILES))
+          fi
+
+          # TypeScript/JavaScript
+          if [ -d frontend ]; then
+            TS_SOURCE=$(find frontend -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" | grep -v node_modules | grep -v ".next" | grep -v dist | xargs cat 2>/dev/null | wc -l | tr -d '[:space:]')
+            TS_FILES=$(find frontend -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" | grep -v node_modules | grep -v ".next" | grep -v dist 2>/dev/null | wc -l | tr -d '[:space:]')
+            SOURCE_LOC=$((SOURCE_LOC + TS_SOURCE))
+            SOURCE_FILES=$((SOURCE_FILES + TS_FILES))
+          fi
+
+          TOTAL_LOC=$((SOURCE_LOC + TEST_LOC))
+
+          echo "source_loc=$SOURCE_LOC" >> "$GITHUB_OUTPUT"
+          echo "test_loc=$TEST_LOC" >> "$GITHUB_OUTPUT"
+          echo "source_files=$SOURCE_FILES" >> "$GITHUB_OUTPUT"
+          echo "test_files=$TEST_FILES" >> "$GITHUB_OUTPUT"
+          echo "total_loc=$TOTAL_LOC" >> "$GITHUB_OUTPUT"
+
+      # ─── Summary ────────────────────────────────────────────────────
+
+      - name: Quality summary
+        run: |
+          LINT="${{ steps.lint.outputs.status }}"
+          FORMAT="${{ steps.format.outputs.status }}"
+          ARCH="${{ steps.architecture.outputs.status }}"
+          GOLDEN="${{ steps.golden.outputs.status }}"
+          TESTS="${{ steps.tests.outputs.count }}"
+          SOURCE_LOC="${{ steps.loc.outputs.source_loc }}"
+          TEST_LOC="${{ steps.loc.outputs.test_loc }}"
+          SOURCE_FILES="${{ steps.loc.outputs.source_files }}"
+          TEST_FILES="${{ steps.loc.outputs.test_files }}"
+          TOTAL_LOC="${{ steps.loc.outputs.total_loc }}"
+
+          PASS_COUNT=0
+          TOTAL_GATES=0
+
+          for gate in "$LINT" "$FORMAT" "$ARCH" "$GOLDEN"; do
+            if [ "$gate" != "skip" ]; then
+              TOTAL_GATES=$((TOTAL_GATES + 1))
+              [ "$gate" = "pass" ] && PASS_COUNT=$((PASS_COUNT + 1))
+            fi
+          done
+
+          echo "========================================================"
+          echo "  QUALITY SCAN SUMMARY — $(date -u +%Y-%m-%d)"
+          echo "========================================================"
+          echo ""
+          echo "  Gate Results ($PASS_COUNT/$TOTAL_GATES passing)"
+          echo "  -----------------------------------------------"
+          echo "  Lint:                       ${LINT:-skip}"
+          echo "  Format:                     ${FORMAT:-skip}"
+          echo "  Architecture invariants:    ${ARCH:-skip}"
+          echo "  Golden principles:          ${GOLDEN:-skip}"
+          echo ""
+          echo "  Code Metrics"
+          echo "  -----------------------------------------------"
+          echo "  Source files:               ${SOURCE_FILES}"
+          echo "  Test files:                 ${TEST_FILES}"
+          echo "  Source LOC:                 ${SOURCE_LOC}"
+          echo "  Test LOC:                   ${TEST_LOC}"
+          echo "  Total LOC:                  ${TOTAL_LOC}"
+          echo "  Total tests:                ${TESTS}"
+          echo ""
+          echo "========================================================"
+
+          if [ "$TOTAL_GATES" -gt 0 ] && [ "$PASS_COUNT" -lt "$TOTAL_GATES" ]; then
+            echo ""
+            echo "Quality drift detected: $PASS_COUNT/$TOTAL_GATES gates passing."
+            echo "Run './scripts/validate.sh' locally to reproduce and fix."
+            exit 1
+          fi
