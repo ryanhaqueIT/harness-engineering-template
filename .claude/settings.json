@@ -19,15 +19,26 @@
     ]
   },
   "hooks": {
-    "PreCommit": [
+    "PreToolUse": [
       {
-        "command": "bash .claude/hooks/pre-commit.sh"
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/pre-commit.sh"
+          }
+        ]
       }
     ],
     "PostToolUse": [
       {
         "matcher": "Edit|Write|NotebookEdit",
-        "command": "bash .claude/hooks/post-edit.sh"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/post-edit.sh"
+          }
+        ]
       }
     ]
   }

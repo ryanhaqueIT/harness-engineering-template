@@ -7,6 +7,13 @@
 
 set -euo pipefail
 
+# Read hook input from stdin — only run validation on git commit commands
+INPUT=$(cat)
+COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
+if ! echo "$COMMAND" | grep -q '^git commit'; then
+    exit 0
+fi
+
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
 if [ ! -f "${REPO_ROOT}/scripts/validate.sh" ]; then
