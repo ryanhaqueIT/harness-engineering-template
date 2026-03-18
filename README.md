@@ -54,7 +54,7 @@ bash setup.sh
 
 The interactive setup asks for project name, language, framework, and infrastructure tool, then configures everything.
 
-## The 22-Gate Validation Suite
+## The 23-Gate Validation Suite
 
 Every line of code passes through `validate.sh`. Nothing gets committed until it exits 0.
 
@@ -65,9 +65,95 @@ Every line of code passes through `validate.sh`. Nothing gets committed until it
 | **3. Unit/Integration** | B3 (pytest), F4-F5 (frontend tests) | Behavior is correct |
 | **4. Functional** | F6-F7 (HTTP smoke, API contract) | Endpoints respond correctly |
 | **5. App Legibility** | F8 (Playwright + `playwright_gate.py`) | UI works — navigate, click, fill, assert via accessibility tree |
-| **6. Observability** | O1 (`check_observability.sh`) | LogsQL: no ERRORs/PANICs. PromQL: p95 < 2s. Feature log assertions |
-| **7. PRD Enforcement** | X5 (`check_features.py`) | Every feature in `feature_list.json` verified `passes: true` |
+| **6. Observability** | O1 (`check_observability.sh`) | LogsQL: no ERRORs/PANICs. PromQL: p95 < 2s |
+| **7. PRD Enforcement** | X5 (feature checklist), X6 (live feature tests) | Features mechanically verified against running app |
 | **Ratchet** | R1 | Quality can never regress |
+
+## End-to-End Flow: PRD to Verified Code
+
+This is how harness engineering replaces human review with mechanical verification.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  1. PROVIDE PRD                                         │
+│     Drop your PRD into docs/product-specs/              │
+│     Or just describe what you want to the agent         │
+└──────────────────────┬──────────────────────────────────┘
+                       ▼
+┌─────────────────────────────────────────────────────────┐
+│  2. GENERATE PLAN                                       │
+│     Run /plan — agent reads PLANS.md template           │
+│     Outputs: docs/exec-plans/active/feature-name.md     │
+│     Contains: milestones, concrete steps, acceptance    │
+│     criteria as observable outcomes                      │
+└──────────────────────┬──────────────────────────────────┘
+                       ▼
+┌─────────────────────────────────────────────────────────┐
+│  3. SEED FEATURE LIST                                   │
+│     Agent writes .harness/feature_list.json              │
+│     Each PRD requirement becomes a feature with:        │
+│     - Executable steps (Send POST, Verify 201, etc.)    │
+│     - Expected values (response.total equals 60.50)     │
+│     - passes: false (not yet verified)                  │
+│     THE AGENT CANNOT CHANGE THESE STEPS LATER           │
+└──────────────────────┬──────────────────────────────────┘
+                       ▼
+┌─────────────────────────────────────────────────────────┐
+│  4. IMPLEMENT                                           │
+│     Agent reads ExecPlan, writes code milestone by      │
+│     milestone. After each change, runs validate.sh.     │
+│     22 structural gates block bad code mechanically.    │
+│     The Ralph Wiggum Loop: implement → validate →       │
+│     fix → re-validate → until exit 0                    │
+└──────────────────────┬──────────────────────────────────┘
+                       ▼
+┌─────────────────────────────────────────────────────────┐
+│  5. VERIFY FEATURES (the key step)                      │
+│     Agent boots the app: ./scripts/boot_worktree.sh     │
+│                                                         │
+│     Gate X6 (check_features_live.py) executes:          │
+│     ┌───────────────────────────────────────────┐       │
+│     │ API features:                             │       │
+│     │   Sends real HTTP requests to running app │       │
+│     │   Checks status codes, response bodies    │       │
+│     │   Verifies exact field values             │       │
+│     │   Verifies data persisted correctly       │       │
+│     ├───────────────────────────────────────────┤       │
+│     │ UI features:                              │       │
+│     │   Opens headless browser (Playwright)     │       │
+│     │   Navigates pages, fills forms, clicks    │       │
+│     │   Asserts text and elements exist         │       │
+│     │   Saves accessibility tree snapshots      │       │
+│     └───────────────────────────────────────────┘       │
+│     Only features that PASS get flipped to true.        │
+│     The runner does the flipping, not the agent.        │
+└──────────────────────┬──────────────────────────────────┘
+                       ▼
+┌─────────────────────────────────────────────────────────┐
+│  6. COMMIT (only if ALL gates pass)                     │
+│     validate.sh runs all 23 gates:                      │
+│     ✓ Code lints and formats (Layers 1-2)              │
+│     ✓ Architecture rules followed (Layers 3-5)         │
+│     ✓ Unit tests pass (Layer 3)                        │
+│     ✓ UI works in browser (Layer 5)                    │
+│     ✓ No ERROR logs, p95 < 2s (Layer 6)               │
+│     ✓ ALL features verified against running app (L7)   │
+│     ✓ Quality ratchet: can't regress                   │
+│     If any gate fails → COMMIT BLOCKED                  │
+└──────────────────────┬──────────────────────────────────┘
+                       ▼
+┌─────────────────────────────────────────────────────────┐
+│  7. SHIP                                                │
+│     Code is mechanically verified to:                   │
+│     - Follow architecture rules (AST-enforced)          │
+│     - Pass all unit tests                               │
+│     - Have all PRD features working (live-tested)       │
+│     - Render correctly in a browser                     │
+│     - Produce clean logs and fast responses             │
+│     - Never regress from current quality baseline       │
+│     No human review needed.                             │
+└─────────────────────────────────────────────────────────┘
+```
 
 ## Key Capabilities
 

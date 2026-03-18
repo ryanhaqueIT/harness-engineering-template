@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # validate.sh — THE UNIVERSAL GATE. Every line of code passes through here.
 #
-# Total gates: 22 (B1-B7 backend, F1-F7 frontend, I1-I2 infra, X1-X5 cross-stack, R1 ratchet)
+# Total gates: 23 (B1-B7 backend, F1-F7 frontend, I1-I2 infra, X1-X6 cross-stack, O1 observability, R1 ratchet)
 #
 # This is the ONLY way to declare code "ready." No exceptions. No shortcuts.
 # Subagents, main agents, humans — everyone runs this before committing.
@@ -349,11 +349,22 @@ else
     skip "  [O1] Observability (Layer 6)" "stack not running — docker compose -f docker-compose.observability.yml up -d"
 fi
 
-# Gate X5: Feature list — PRD completion gate
+# Gate X5: Feature list — PRD completion gate (checklist)
 if [ -f "${REPO_ROOT}/.harness/feature_list.json" ]; then
     check "  [X5] Feature list (PRD gate)" python3 "${REPO_ROOT}/scripts/check_features.py" --summary
 else
     skip "  [X5] Feature list (PRD gate)" "no .harness/feature_list.json — create one to enable"
+fi
+
+# Gate X6: Live feature verification — executes steps against running app
+if [ -f "${REPO_ROOT}/instance-metadata.json" ] || [ "${RUN_LIVE:-}" = "true" ]; then
+    if [ -f "${REPO_ROOT}/scripts/check_features_live.py" ] && [ -f "${REPO_ROOT}/.harness/feature_list.json" ]; then
+        check "  [X6] Live feature tests (PRD enforcement)" python3 "${REPO_ROOT}/scripts/check_features_live.py" --summary
+    else
+        skip "  [X6] Live feature tests" "check_features_live.py or feature_list.json not found"
+    fi
+else
+    skip "  [X6] Live feature tests" "app not running — use boot_worktree.sh or RUN_LIVE=true"
 fi
 
 # Gate R1: Ratchet check (quality can only improve, never regress)
