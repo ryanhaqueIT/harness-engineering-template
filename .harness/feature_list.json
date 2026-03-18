@@ -1,0 +1,129 @@
+{
+  "version": "1.0",
+  "meta": {
+    "project": "sample-app",
+    "created": "2026-03-18",
+    "total": 8,
+    "passing": 0
+  },
+  "features": [
+    {
+      "id": "F001",
+      "category": "functional",
+      "priority": 1,
+      "description": "Health endpoint returns 200 with JSON status",
+      "steps": [
+        "Send GET /health",
+        "Verify HTTP 200 response",
+        "Verify JSON body contains {\"status\": \"healthy\"}"
+      ],
+      "passes": false,
+      "verified_by": null,
+      "verified_at": null
+    },
+    {
+      "id": "F002",
+      "category": "functional",
+      "priority": 2,
+      "description": "User registration creates account and returns JWT",
+      "steps": [
+        "Send POST /api/auth/register with email and password",
+        "Verify HTTP 201 response",
+        "Verify response contains access_token",
+        "Verify user exists in database"
+      ],
+      "passes": false,
+      "verified_by": null,
+      "verified_at": null
+    },
+    {
+      "id": "F003",
+      "category": "functional",
+      "priority": 3,
+      "description": "User login with valid credentials returns JWT",
+      "steps": [
+        "Send POST /api/auth/login with valid email/password",
+        "Verify HTTP 200 response",
+        "Verify response contains access_token"
+      ],
+      "passes": false,
+      "verified_by": null,
+      "verified_at": null
+    },
+    {
+      "id": "F004",
+      "category": "ui",
+      "priority": 4,
+      "description": "Login page renders with email and password fields",
+      "steps": [
+        "Navigate to /login",
+        "Verify page contains input[name=email]",
+        "Verify page contains input[name=password]",
+        "Verify page contains button[type=submit]"
+      ],
+      "passes": false,
+      "verified_by": null,
+      "verified_at": null
+    },
+    {
+      "id": "F005",
+      "category": "ui",
+      "priority": 5,
+      "description": "Dashboard page shows user data after login",
+      "steps": [
+        "Login with valid credentials",
+        "Navigate to /dashboard",
+        "Verify page shows user email",
+        "Verify page shows navigation menu"
+      ],
+      "passes": false,
+      "verified_by": null,
+      "verified_at": null
+    },
+    {
+      "id": "F006",
+      "category": "security",
+      "priority": 6,
+      "description": "Protected endpoints reject unauthenticated requests",
+      "steps": [
+        "Send GET /api/user/profile without Authorization header",
+        "Verify HTTP 401 response",
+        "Send GET /api/user/profile with invalid token",
+        "Verify HTTP 401 response"
+      ],
+      "passes": false,
+      "verified_by": null,
+      "verified_at": null
+    },
+    {
+      "id": "F007",
+      "category": "reliability",
+      "priority": 7,
+      "description": "API returns structured error responses with correlation ID",
+      "steps": [
+        "Send invalid request to any endpoint",
+        "Verify response contains error.message field",
+        "Verify response contains error.correlation_id field",
+        "Verify correlation_id appears in application logs"
+      ],
+      "passes": false,
+      "verified_by": null,
+      "verified_at": null
+    },
+    {
+      "id": "F008",
+      "category": "observability",
+      "priority": 8,
+      "description": "Application logs structured JSON to stdout",
+      "steps": [
+        "Start the application",
+        "Trigger a request",
+        "Verify stdout contains JSON log lines",
+        "Verify log lines contain timestamp, level, message fields"
+      ],
+      "passes": false,
+      "verified_by": null,
+      "verified_at": null
+    }
+  ]
+}

@@ -42,6 +42,18 @@ Violations are caught by validate.sh. These are not suggestions.
 3. **Module boundaries** — routers cannot import db or AI layers directly. `scripts/check_imports.py` enforces the DAG above.
 4. **No God files** — `scripts/check_architecture.py` flags files exceeding size/responsibility thresholds.
 
+## Feature List Gate
+
+The file `.harness/feature_list.json` is the PRD enforcement mechanism.
+
+**Rules:**
+- Every feature starts with `"passes": false`
+- Only flip to `true` AFTER verifying each step listed in `"steps"`
+- NEVER edit descriptions, remove features, or reorder priorities
+- NEVER flip to `true` without running the verification steps
+- JSON format is intentional — do not convert to Markdown
+- Run `/features` to see current status and pick next feature to implement
+
 ## Progressive Disclosure
 
 | File | When to read |

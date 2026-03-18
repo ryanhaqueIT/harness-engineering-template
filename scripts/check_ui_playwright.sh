@@ -1,45 +1,28 @@
 #!/usr/bin/env bash
-# check_ui_playwright.sh — Layer 5 Application Legibility with REAL browser.
+# check_ui_playwright.sh — Layer 5 Browser Automation Gate
+# Drives the UI like a QA engineer using Playwright.
+# Based on: OpenAI CDP + Anthropic Puppeteer MCP patterns.
 #
-# Uses Playwright to launch a headless browser, navigate pages, interact
-# with forms, and verify the app works as a real user would experience it.
+# Key insight: Uses accessibility tree snapshots over screenshots.
+# This is deterministic, cheaper (no vision API), and less brittle.
 #
-# This goes BEYOND curl-based checks:
-#   - Renders JavaScript (catches React hydration failures)
-#   - Captures console.error (catches runtime JS errors)
-#   - Fills forms and clicks buttons (catches broken interactions)
-#   - Takes screenshots (enables visual regression testing)
-#
-# Prerequisites: npx playwright install chromium
-# Falls back gracefully if Playwright is not installed.
-
-set -uo pipefail
+# Usage:
+#   ./scripts/check_ui_playwright.sh           # auto-detect frontend
+#   ./scripts/check_ui_playwright.sh 3000      # use running frontend on port
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ROOT_DIR="$(dirname "$SCRIPT_DIR")"
-FRONTEND_DIR="${ROOT_DIR}/frontend"
-PORT="${1:-3857}"
-PASS=0
-FAIL=0
-CLEANUP_PID=""
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+SNAPSHOT_DIR="${REPO_ROOT}/.harness/snapshots"
+mkdir -p "$SNAPSHOT_DIR"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BOLD='\033[1m'
 NC='\033[0m'
 
-check() {
-    local name="$1"
-    shift
-    if "$@" 2>&1; then
-        echo -e "  ${GREEN}PASS${NC} $name"
-        ((PASS++))
-    else
-        echo -e "  ${RED}FAIL${NC} $name"
-        ((FAIL++))
-    fi
-}
-
+CLEANUP_PID=""
 cleanup() {
     if [ -n "$CLEANUP_PID" ]; then
         kill "$CLEANUP_PID" 2>/dev/null
@@ -48,145 +31,111 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "Layer 5 — Application Legibility (Playwright)"
+# ─── Detect app URLs ─────────────────────────────────────────────────
+METADATA="${REPO_ROOT}/instance-metadata.json"
+if [ -f "$METADATA" ]; then
+    BACKEND_URL=$(python3 -c "import json; print(json.load(open('$METADATA'))['backend_url'])" 2>/dev/null || echo "http://localhost:8000")
+    FRONTEND_URL=$(python3 -c "import json; print(json.load(open('$METADATA'))['frontend_url'])" 2>/dev/null || echo "http://localhost:3000")
+else
+    BACKEND_URL="http://localhost:8000"
+    FRONTEND_URL="http://localhost:3000"
+fi
+
+# ─── Determine port & boot if needed ─────────────────────────────────
+PORT="${1:-}"
+FRONTEND_DIR="${REPO_ROOT}/frontend"
+
+if [ -n "$PORT" ]; then
+    FRONTEND_URL="http://localhost:${PORT}"
+elif ! curl -sf -o /dev/null "$FRONTEND_URL" 2>/dev/null; then
+    # Try common dev ports
+    for TRY_PORT in 3000 3001 3857 5173 8080; do
+        if curl -sf -o /dev/null "http://localhost:${TRY_PORT}" 2>/dev/null; then
+            FRONTEND_URL="http://localhost:${TRY_PORT}"
+            PORT="$TRY_PORT"
+            echo -e "${GREEN}Found running frontend on port ${TRY_PORT}${NC}"
+            break
+        fi
+    done
+
+    # Nothing found — boot one ourselves
+    if [ -z "$PORT" ] && [ -d "$FRONTEND_DIR" ] && [ -f "$FRONTEND_DIR/package.json" ]; then
+        cd "$FRONTEND_DIR"
+        PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()" 2>/dev/null || echo "3857")
+        FRONTEND_URL="http://localhost:${PORT}"
+
+        if [ -f "next.config.js" ] || [ -f "next.config.ts" ] || [ -f "next.config.mjs" ]; then
+            [ ! -d ".next" ] && { echo "Building frontend..."; npx next build > /dev/null 2>&1; }
+            npx next start -p "$PORT" > /dev/null 2>&1 &
+            CLEANUP_PID=$!
+        elif [ -f "vite.config.ts" ] || [ -f "vite.config.js" ]; then
+            npx vite preview --port "$PORT" > /dev/null 2>&1 &
+            CLEANUP_PID=$!
+        elif grep -q '"start"' package.json 2>/dev/null; then
+            PORT="$PORT" npm start > /dev/null 2>&1 &
+            CLEANUP_PID=$!
+        fi
+
+        if [ -n "$CLEANUP_PID" ]; then
+            echo "Booting frontend on port $PORT..."
+            for _ in $(seq 1 20); do
+                curl -sf -o /dev/null "$FRONTEND_URL" 2>/dev/null && break
+                sleep 1
+            done
+        fi
+    fi
+fi
+
+echo ""
+echo -e "${BOLD}=== Layer 5 — Browser Automation Gate ===${NC}"
+echo -e "  Frontend: ${FRONTEND_URL}"
+echo -e "  Backend:  ${BACKEND_URL}"
 echo ""
 
-# Check if Playwright is available
-if ! npx playwright --version &>/dev/null; then
-    echo -e "${YELLOW}Playwright not installed. Install with: npx playwright install chromium${NC}"
-    echo -e "${YELLOW}Falling back to curl-based checks.${NC}"
-    exec bash "${SCRIPT_DIR}/check_ui_legibility.sh" "$@"
+# ─── Dispatch to Python gate or fallback ──────────────────────────────
+export REPO_ROOT FRONTEND_URL BACKEND_URL
+
+if [ -f "${REPO_ROOT}/scripts/playwright_gate.py" ] && [ -f "${REPO_ROOT}/.harness/feature_list.json" ]; then
+    # Full feature-driven gate
+    echo -e "${BOLD}Running feature-driven browser gate...${NC}"
+    python3 "${REPO_ROOT}/scripts/playwright_gate.py"
+    exit $?
 fi
 
-# Build and start frontend (detect framework)
-cd "$FRONTEND_DIR"
-
-if [ -f "next.config.js" ] || [ -f "next.config.ts" ] || [ -f "next.config.mjs" ]; then
-    if [ ! -d ".next" ]; then
-        echo "Building frontend..."
-        npx next build > /dev/null 2>&1
-    fi
-    npx next start -p "$PORT" > /dev/null 2>&1 &
-    CLEANUP_PID=$!
-elif [ -f "vite.config.ts" ] || [ -f "vite.config.js" ]; then
-    npx vite preview --port "$PORT" > /dev/null 2>&1 &
-    CLEANUP_PID=$!
-elif grep -q '"start"' package.json 2>/dev/null; then
-    PORT="$PORT" npm start > /dev/null 2>&1 &
-    CLEANUP_PID=$!
-else
-    echo -e "${RED}Cannot detect frontend framework${NC}"
-    exit 1
+if [ -f "${REPO_ROOT}/scripts/playwright_gate.py" ]; then
+    # No feature_list.json — run default checks via Python
+    echo -e "${BOLD}Running default browser checks (no feature_list.json)...${NC}"
+    python3 "${REPO_ROOT}/scripts/playwright_gate.py"
+    exit $?
 fi
 
-echo "Booting frontend on port $PORT..."
-for i in $(seq 1 20); do
-    if curl -s "http://localhost:${PORT}" > /dev/null 2>&1; then
-        break
+# ─── Pure-shell fallback (no playwright_gate.py) ─────────────────────
+echo -e "${YELLOW}playwright_gate.py not found — falling back to HTTP checks${NC}"
+echo ""
+
+PASS=0
+FAIL=0
+
+for PAGE in "/" "/login" "/dashboard"; do
+    BODY=$(curl -sf "${FRONTEND_URL}${PAGE}" 2>/dev/null || echo "")
+    BODY_LEN=${#BODY}
+    if [ "$BODY_LEN" -gt 50 ]; then
+        echo -e "  ${GREEN}PASS${NC}  ${PAGE} returns content (${BODY_LEN} bytes)"
+        ((PASS++))
+    else
+        STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${FRONTEND_URL}${PAGE}" 2>/dev/null || echo "000")
+        if [ "$STATUS" = "301" ] || [ "$STATUS" = "302" ] || [ "$STATUS" = "307" ]; then
+            echo -e "  ${GREEN}PASS${NC}  ${PAGE} redirects (HTTP ${STATUS})"
+            ((PASS++))
+        else
+            echo -e "  ${RED}FAIL${NC}  ${PAGE} — ${BODY_LEN} bytes, HTTP ${STATUS}"
+            ((FAIL++))
+        fi
     fi
-    sleep 1
 done
 
-if ! curl -s "http://localhost:${PORT}" > /dev/null 2>&1; then
-    echo -e "${RED}Frontend failed to start on port ${PORT}${NC}"
-    exit 1
-fi
-
-echo "Frontend running on port $PORT"
 echo ""
-
-# Create Playwright test script
-TEST_SCRIPT=$(mktemp /tmp/playwright_test_XXXXXX.js)
-cat > "$TEST_SCRIPT" << 'PLAYWRIGHT_EOF'
-const { chromium } = require('playwright');
-
-(async () => {
-    const port = process.argv[2] || '3857';
-    const baseUrl = `http://localhost:${port}`;
-    const results = [];
-    let consoleErrors = [];
-
-    const browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
-    const page = await context.newPage();
-
-    // Capture console errors
-    page.on('console', msg => {
-        if (msg.type() === 'error') {
-            consoleErrors.push(msg.text());
-        }
-    });
-    page.on('pageerror', err => {
-        consoleErrors.push(err.message);
-    });
-
-    // Test 1: Home page loads and renders
-    try {
-        await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 15000 });
-        const bodyText = await page.textContent('body');
-        const hasContent = bodyText && bodyText.length > 50;
-        results.push({ name: 'Home page renders with content', pass: hasContent });
-    } catch (e) {
-        results.push({ name: 'Home page renders with content', pass: false, error: e.message });
-    }
-
-    // Test 2: No JavaScript console errors
-    results.push({
-        name: `No console errors (found ${consoleErrors.length})`,
-        pass: consoleErrors.length === 0,
-        error: consoleErrors.length > 0 ? consoleErrors.slice(0, 3).join('; ') : undefined
-    });
-
-    // Test 3: Screenshot captures (visual evidence)
-    try {
-        const screenshotDir = '/tmp/harness-screenshots';
-        const fs = require('fs');
-        if (!fs.existsSync(screenshotDir)) fs.mkdirSync(screenshotDir, { recursive: true });
-        await page.screenshot({ path: `${screenshotDir}/home.png`, fullPage: true });
-        results.push({ name: `Screenshots saved to ${screenshotDir}/`, pass: true });
-    } catch (e) {
-        results.push({ name: 'Screenshots captured', pass: false, error: e.message });
-    }
-
-    await browser.close();
-
-    // Output results as JSON
-    console.log(JSON.stringify({ results, consoleErrors }));
-    process.exit(results.every(r => r.pass) ? 0 : 1);
-})();
-PLAYWRIGHT_EOF
-
-# Run Playwright tests
-echo "-- Playwright Browser Tests"
-RESULT=$(node "$TEST_SCRIPT" "$PORT" 2>/dev/null)
-EXIT_CODE=$?
-
-if [ "$EXIT_CODE" -eq 0 ]; then
-    echo "$RESULT" | python3 -c "
-import sys, json
-try:
-    data = json.loads(sys.stdin.read())
-    for r in data['results']:
-        status = 'PASS' if r['pass'] else 'FAIL'
-        print(f'  {status} {r[\"name\"]}')
-    passed = sum(1 for r in data['results'] if r['pass'])
-    total = len(data['results'])
-    print(f'Playwright: {passed}/{total} passed')
-except:
-    print('  Could not parse Playwright results')
-" 2>/dev/null
-    PASS=$((PASS + 1))
-    echo -e "   ${GREEN}PASS${NC}"
-else
-    FAIL=$((FAIL + 1))
-    echo -e "   ${RED}FAIL${NC}"
-fi
-
-# Cleanup temp file
-rm -f "$TEST_SCRIPT"
-
-echo ""
-echo "Layer 5 Legibility: ${PASS} passed, ${FAIL} failed"
+echo "Layer 5 Browser Gate: ${PASS} passed, ${FAIL} failed"
 
 if [ "$FAIL" -gt 0 ]; then
     exit 1

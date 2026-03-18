@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # validate.sh — THE UNIVERSAL GATE. Every line of code passes through here.
 #
-# Total gates: 21 (B1-B7 backend, F1-F7 frontend, I1-I2 infra, X1-X4 cross-stack, R1 ratchet)
+# Total gates: 22 (B1-B7 backend, F1-F7 frontend, I1-I2 infra, X1-X5 cross-stack, R1 ratchet)
 #
 # This is the ONLY way to declare code "ready." No exceptions. No shortcuts.
 # Subagents, main agents, humans — everyone runs this before committing.
@@ -347,6 +347,13 @@ if curl -s http://localhost:8428/health &>/dev/null && curl -s http://localhost:
     check "  [O1] Observability (Layer 6)" bash "${REPO_ROOT}/scripts/check_observability.sh"
 else
     skip "  [O1] Observability (Layer 6)" "stack not running — docker compose -f docker-compose.observability.yml up -d"
+fi
+
+# Gate X5: Feature list — PRD completion gate
+if [ -f "${REPO_ROOT}/.harness/feature_list.json" ]; then
+    check "  [X5] Feature list (PRD gate)" python3 "${REPO_ROOT}/scripts/check_features.py" --summary
+else
+    skip "  [X5] Feature list (PRD gate)" "no .harness/feature_list.json — create one to enable"
 fi
 
 # Gate R1: Ratchet check (quality can only improve, never regress)
