@@ -1,129 +1,172 @@
 # Harness Engineering Template
 
-> A reusable framework for AI-first software development. Clone, run `setup.sh`, and get a fully instrumented project that any AI coding agent can navigate, validate, and ship in.
+> 22 validation gates. 7 layers of testing. Zero human review bottleneck. Deploy the full harness into any repo with one command.
 
 ## What Is Harness Engineering?
 
-Harness engineering is the discipline of designing environments, constraints, and feedback loops that enable AI coding agents to write reliable software at scale. Instead of writing code directly, engineers design the system that makes agents write *good* code: structured documentation, mechanical enforcement of architecture, automated quality gates, and progressive context disclosure.
+Harness engineering is the discipline of designing environments, constraints, and feedback loops that enable AI coding agents to write reliable software at scale. Instead of writing code directly, engineers design the system that makes agents write *good* code.
 
-The fundamental insight is that AI agents replicate patterns already present in a repository -- including bad ones. Left unchecked, this leads to architectural drift, copy-paste propagation, and compounding entropy. The harness prevents this by encoding invariants into scripts, enforcing them in CI, and making the running application visible to agents for self-validation. The investment is in the harness, not the code. The code is the dividend.
+AI agents replicate patterns already present in a repository — including bad ones. The harness prevents architectural drift by encoding invariants into AST-based scripts, enforcing them in CI, and making the running application visible to agents for self-validation. The investment is in the harness, not the code. The code is the dividend.
 
-## The 7-Layer Testing Pyramid
+## Quick Start — Bootstrap Any Repo
 
-Harness engineering structures validation into seven layers, each catching a different class of defect. Lower layers run fastest and catch the most common issues. Higher layers provide deeper confidence.
+### With Claude Code (fully automatic)
 
-| Layer | Name | What It Checks | Tools |
-|-------|------|----------------|-------|
-| **1** | Static Analysis | Lint errors, formatting, syntax | ruff, eslint, prettier, tsc |
-| **2** | Unit Tests | Individual functions and modules | pytest, jest, vitest |
-| **3** | Import Boundaries | Module dependency rules (no circular imports, no cross-layer access) | `check_imports.py` (AST-based) |
-| **4** | Golden Principles | No print(), no secrets, type hints, no bare except | `check_golden_principles.py` (AST-based) |
-| **5** | Architecture Invariants | No God files, naming conventions, test mirrors, DB access rules | `check_architecture.py` (AST-based) |
-| **6** | Application Legibility | Pages render, DOM content present, no console errors, static assets load | `check_ui_legibility.sh`, Playwright |
-| **7** | E2E Deployed Validation | Health endpoints, API schemas, response headers, CORS | `check_e2e_deployed.sh` |
+One-time install (any machine):
+```bash
+mkdir -p ~/.claude/commands
+curl -o ~/.claude/commands/bootstrap.md \
+  https://raw.githubusercontent.com/ryanhaqueIT/harness-engineering-template/master/.claude/commands/bootstrap.md
+```
 
-Every layer produces actionable error messages with file paths, line numbers, and fix instructions so agents can self-repair without human intervention.
+Then from inside any repo:
+```
+/bootstrap
+```
 
-## How to Use This Template
+That's it. Claude scans your repo, detects the stack, copies and configures all 22 scripts, writes AGENTS.md, seeds the feature list, runs validate.sh, initializes the ratchet, and reports a scorecard grade. Zero manual steps.
 
-### Quick Start
+### With Any AI Agent (Codex, Cursor, Copilot, Windsurf)
 
 ```bash
-git clone https://github.com/your-org/harness-engineering-template.git my-project
+curl -sL https://raw.githubusercontent.com/ryanhaqueIT/harness-engineering-template/master/bootstrap.sh | bash
+```
+
+This handles the mechanical parts (copying scripts, creating directories). Then tell your agent:
+
+> "Read ~/.harness/playbooks/01-analyze.md and complete the harness setup for this project."
+
+The agent configures the import rules, writes AGENTS.md, and finishes the intelligent parts.
+
+### Manual (clone and setup)
+
+```bash
+git clone https://github.com/ryanhaqueIT/harness-engineering-template.git my-project
 cd my-project
 bash setup.sh
 ```
 
-The interactive setup will ask you:
-1. **Project name** (e.g., "Acme Platform")
-2. **Backend language** (python / node)
-3. **Frontend framework** (next / react / vue / none)
-4. **Infrastructure tool** (terraform / pulumi / none)
+The interactive setup asks for project name, language, framework, and infrastructure tool, then configures everything.
 
-It then generates your `AGENTS.md`, configures `check_imports.py` with correct module rules, creates the appropriate CI workflow, and makes `validate.sh` ready to run.
+## The 22-Gate Validation Suite
 
-### After Setup
+Every line of code passes through `validate.sh`. Nothing gets committed until it exits 0.
 
-```bash
-# Validate everything (run before every commit)
-./scripts/validate.sh
+| Layer | Gates | What They Verify |
+|-------|-------|-----------------|
+| **1. Deterministic** | B1 (lint), B2 (format), B7 (types), F1-F3 | Code is syntactically correct |
+| **2. Structural** | B4 (imports), B5 (golden principles), B6 (architecture), X1-X2 | Architecture rules followed, no secrets |
+| **3. Unit/Integration** | B3 (pytest), F4-F5 (frontend tests) | Behavior is correct |
+| **4. Functional** | F6-F7 (HTTP smoke, API contract) | Endpoints respond correctly |
+| **5. App Legibility** | F8 (Playwright + `playwright_gate.py`) | UI works — navigate, click, fill, assert via accessibility tree |
+| **6. Observability** | O1 (`check_observability.sh`) | LogsQL: no ERRORs/PANICs. PromQL: p95 < 2s. Feature log assertions |
+| **7. PRD Enforcement** | X5 (`check_features.py`) | Every feature in `feature_list.json` verified `passes: true` |
+| **Ratchet** | R1 | Quality can never regress |
 
-# Boot both backend + frontend on dynamic ports
-./scripts/boot_worktree.sh
+## Key Capabilities
 
-# Run E2E against deployed instance
-./scripts/check_e2e_deployed.sh https://your-app.example.com
-```
+### Feature List Gate (PRD Enforcement)
+Based on [Anthropic's harness pattern](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents). Features are tracked in `.harness/feature_list.json`. Each has `passes: true/false`. The agent can only flip `passes` to `true` after verification — it cannot remove features, edit descriptions, or skip steps.
 
-### Manual Setup
+### Browser Automation (Playwright)
+`playwright_gate.py` drives the UI like a QA engineer using accessibility tree snapshots (not screenshots). Supports: navigate, click, fill forms, assert text/elements. Saves a11y snapshots for debugging.
 
-If you prefer not to use the interactive setup:
+### Runtime Observability
+Queries VictoriaLogs (LogsQL) and VictoriaMetrics (PromQL) for real signals: ERROR/PANIC log counts, p95 latency, feature-specific log assertions. Based on [OpenAI's per-worktree observability](https://openai.com/index/harness-engineering/).
 
-1. Copy this template into your project root
-2. Edit `AGENTS.md` -- replace all `{{PLACEHOLDER}}` values with your project specifics
-3. Edit `scripts/check_imports.py` -- define your module dependency RULES dict
-4. Edit `scripts/check_architecture.py` -- configure your DB library name and AI library name
-5. Run `./scripts/validate.sh` to verify everything works
+### Quality Ratchet
+`ratchet.py` counts violations across 8 categories and saves a baseline. Violations can only go down, never up. If you make the codebase worse, the commit is blocked.
 
-## The 5-Phase Lifecycle
+### AST-Based Enforcement
+Three Python scripts use Abstract Syntax Tree parsing for unfakeable enforcement:
+- `check_imports.py` — Module dependency boundaries (routers can't import db)
+- `check_golden_principles.py` — No print(), no secrets, type hints, no bare except
+- `check_architecture.py` — No God files, DB containment, config containment, naming
 
-### Phase 1: Scaffold
-Set up project structure, install dependencies, configure CI. The harness validates that the skeleton compiles, lints, and passes empty test suites.
+### AI-Powered PR Review
+`claude-review.yml` runs on every PR. Claude reviews the diff against `QUALITY_SCORE.md` rubric: Code Quality (1-5), Test Quality (1-5), Architecture (1-5), Security (pass/fail), Reliability (pass/fail).
 
-### Phase 2: Specify
-Write specs in `docs/product-specs/`, create ExecPlans in `docs/exec-plans/active/`, document design decisions in `docs/design-docs/`. The harness validates cross-references and prevents orphan documentation.
+### Entropy Management
+- Weekly doc-gardening finds orphan docs and broken references
+- Daily quality scans track metrics and detect drift
+- Entropy cleaner agent hunts stale TODOs, dead code, and dependency drift
+- Harness scorecard grades maturity across 31 checks (A+ through F)
 
-### Phase 3: Implement
-Agents read the active ExecPlan, implement the feature, and run `validate.sh` after every change. The Ralph Wiggum Loop: implement, validate, fix, re-validate until exit 0.
+## Bootstrap Workflow
 
-### Phase 4: Validate
-Run all 7 layers. Boot the app with `boot_worktree.sh`. Run `check_ui_legibility.sh` for frontend smoke tests. Run `check_e2e_deployed.sh` against the deployed instance. Nothing merges until all gates pass.
+When you run `/bootstrap`, the agent executes four phases:
 
-### Phase 5: Maintain
-Weekly doc-gardening (`.github/workflows/doc-gardening.yml`) catches orphan docs and broken cross-references. Daily quality scans (`.github/workflows/quality-scan.yml`) track code metrics and gate drift. Tech debt is tracked in `docs/exec-plans/tech-debt-tracker.md`.
+| Phase | What Happens |
+|-------|-------------|
+| **0. Discover** | Scans the repo: language, framework, modules, DB library, AI libraries, API endpoints, frontend pages, existing harness |
+| **1. Analyze** | Derives import rules, architecture constants, feature list seed, three-tier boundaries. Traces actual imports to build the dependency DAG |
+| **2. Generate** | Copies 22 scripts, configures them, writes AGENTS.md/CLAUDE.md/copilot-instructions.md, seeds feature list, installs CI workflows and Claude Code integration |
+| **3. Verify** | Runs validate.sh, initializes ratchet baseline, runs scorecard, verifies script syntax and agent file consistency |
+
+Playbooks: `playbooks/00-discover.md` through `playbooks/03-verify.md`
 
 ## Repository Structure
 
 ```
 harness-engineering-template/
-  AGENTS.md               # Entry point for all AI agents (~150 lines)
-  PLANS.md                # ExecPlan template and rules
-  README.md               # This file
-  setup.sh                # Interactive project setup
-  docs/
-    QUALITY_SCORE.md      # Grading rubric (code, tests, architecture, security, reliability)
-    PRODUCT_SENSE.md      # Product beliefs and decision framework
-    SECURITY.md           # Auth, secrets, data protection, API security
-    RELIABILITY.md        # Logging, errors, timeouts, idempotency, degradation
-    DESIGN.md             # Design system documentation template
-    FRONTEND.md           # Frontend conventions template
-    design-docs/
-      core-beliefs.md     # Locked technical beliefs
-    exec-plans/
-      active/             # In-progress execution plans
-      completed/          # Finished execution plans
-      tech-debt-tracker.md # Known technical debt
-    generated/            # Auto-generated docs (DB schema, API docs)
-    product-specs/        # Feature specifications
-    references/           # External API docs formatted for LLMs
+  bootstrap.sh              # Agent-agnostic bootstrap script
+  setup.sh                  # Interactive setup (clone-and-use)
+  AGENTS.md                 # Entry point for AI agents
+  PLANS.md                  # ExecPlan template and rules
+  playbooks/
+    00-discover.md          # Phase 0: repo scanning
+    01-analyze.md           # Phase 1: architecture analysis
+    02-generate.md          # Phase 2: harness generation
+    03-verify.md            # Phase 3: verification
   scripts/
-    validate.sh           # THE UNIVERSAL GATE
-    check_imports.py      # Module dependency boundary enforcement
-    check_golden_principles.py # No print, no secrets, type hints, no bare except
-    check_architecture.py # God files, naming, test mirrors, access rules
-    check_ui_legibility.sh # Frontend DOM/content smoke tests
-    check_e2e_deployed.sh # E2E against deployed instance
-    boot_worktree.sh      # Per-worktree app booting with dynamic ports
-    setup.sh              # One-command harness initialization
+    validate.sh             # THE UNIVERSAL GATE (22 gates)
+    check_imports.py        # AST-based import boundary enforcement
+    check_golden_principles.py  # AST-based golden principles
+    check_architecture.py   # AST-based architecture invariants
+    check_features.py       # Feature list PRD gate
+    playwright_gate.py      # Browser automation via a11y tree
+    check_observability.sh  # LogsQL + PromQL verification
+    check_ui_legibility.sh  # HTTP-based UI smoke tests
+    check_e2e_deployed.sh   # E2E against deployed instance
+    ratchet.py              # Forward-only quality ratchet
+    harness_scorecard.py    # 31-check maturity scorecard
+    boot_worktree.sh        # Per-worktree app booting
+    query_logs.sh           # LogsQL query helper
+    query_metrics.sh        # PromQL query helper
+  agents/
+    bootstrapper.md         # Bootstrap agent definition
+    planner.md              # ExecPlan generation agent
+    reviewer.md             # Code review agent
+    entropy-cleaner.md      # Entropy detection agent
+  .claude/
+    commands/               # Slash commands (/validate, /bootstrap, /scorecard, etc.)
+    hooks/                  # Pre-commit and post-edit hooks
+    settings.json           # Permissions and hook configuration
   .github/workflows/
-    ci.yml                # CI pipeline (lint, test, structural checks)
-    doc-gardening.yml     # Weekly orphan/cross-ref scan
-    quality-scan.yml      # Daily quality dashboard
+    ci.yml                  # CI pipeline (all gates)
+    claude-review.yml       # AI-powered PR review
+    quality-scan.yml        # Daily quality dashboard
+    doc-gardening.yml       # Weekly documentation entropy scan
+  docs/
+    QUALITY_SCORE.md        # Grading rubric
+    SECURITY.md             # Security standards
+    RELIABILITY.md          # Reliability standards
+    design-docs/            # Locked architectural decisions
+    exec-plans/             # Active and completed execution plans
+    product-specs/          # Feature specifications
+  .harness/
+    feature_list.json       # PRD feature tracking
+    baseline.json           # Ratchet quality baseline
+  docker-compose.observability.yml  # VictoriaLogs + VictoriaMetrics + Vector
 ```
 
 ## Credits
 
-This methodology is based on [OpenAI's "Harness engineering: leveraging Codex in an agent-first world"](https://openai.com/index/harness-engineering/) (February 2026, Ryan Lopopolo) and battle-tested across multiple production AI agent platforms.
+This methodology synthesizes:
+- [OpenAI's "Harness engineering: leveraging Codex in an agent-first world"](https://openai.com/index/harness-engineering/) (February 2026) — 7-layer pyramid, application legibility, per-worktree observability
+- [Anthropic's "Effective harnesses for long-running agents"](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents) (November 2025) — Feature list gate, browser automation, session verification protocol
+- [Stripe's "Minions: one-shot end-to-end coding agents"](https://stripe.dev/blog/minions-stripes-one-shot-end-to-end-coding-agents) — CI-as-feedback-loop, two-attempt maximum, context-over-iteration
+- [agentic-harness-bootstrap](https://github.com/) — 4-phase playbook workflow, three-tier boundaries, standing maintenance orders
 
 ## License
 
