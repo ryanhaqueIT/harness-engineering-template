@@ -1,265 +1,194 @@
 # Harness Engineering Template
 
-> 22 validation gates. 7 layers of testing. Zero human review bottleneck. Deploy the full harness into any repo with one command.
+A tiered, incremental code quality framework for Python + Next.js repos. Install one shell command, get lint/format/typecheck/test gates that block bad commits — without touching your existing configs.
 
-## What Is Harness Engineering?
+## Why This Exists
 
-Harness engineering is the discipline of designing environments, constraints, and feedback loops that enable AI coding agents to write reliable software at scale. Instead of writing code directly, engineers design the system that makes agents write *good* code.
+Most quality tooling falls into two traps:
 
-AI agents replicate patterns already present in a repository — including bad ones. The harness prevents architectural drift by encoding invariants into AST-based scripts, enforcing them in CI, and making the running application visible to agents for self-validation. The investment is in the harness, not the code. The code is the dividend.
+1. **All-or-nothing frameworks** — require adopting an entire ecosystem (Nx, Turborepo, etc.) just to get linting. Teams that already have tooling won't switch.
+2. **DIY shell scripts** — every team writes their own pre-commit hooks, their own CI lint step, their own "how to set up the repo" wiki page. Nothing is reusable across the org.
 
-## Quick Start — Bootstrap Any Repo
+The harness sits in between: it detects what you have, fills gaps with org defaults, and enforces quality through a standard pre-commit hook. Teams with existing ruff/eslint configs keep them. Teams with nothing get sensible defaults.
 
-### With Claude Code (fully automatic)
+## Architecture
 
-**Step 1** — Install the bootstrap command globally (one time per machine):
-```bash
-mkdir -p ~/.claude/commands
-curl -o ~/.claude/commands/bootstrap.md \
-  https://raw.githubusercontent.com/ryanhaqueIT/harness-engineering-template/master/.claude/commands/bootstrap.md
+Four tiers, installed independently, each building on the previous:
+
+| Tier | Name | Status | What It Enforces |
+|------|------|--------|-----------------|
+| **T1** | Code Quality | **Functional** | Lint, format, typecheck, unit tests |
+| **T2** | Architecture | Design only | Import boundaries, file size limits, code principles |
+| **T3** | App Testing | Design only | Boot contract, API smoke tests, UI legibility, E2E |
+| **T4** | Product Verification | Design only | Feature completeness verified against PRD |
+
+```
+T1 (Code Quality)           ← every repo, day one
+ └─► T2 (Architecture)      ← repos passing T1 consistently
+      └─► T3 (App Testing)  ← repos with APIs or UIs
+           └─► T4 (Product) ← product-critical repos
 ```
 
-**Step 2** — Open your target repo in Claude Code:
-```bash
-cd /path/to/your-project
-claude
-```
+Tiers are independent — install T1 without T2. The dependency is conceptual: T2 rules assume T1 quality, T3 needs a running app, T4 needs T3's boot contract.
 
-**Step 3** — Run the bootstrap inside Claude Code:
-```
-/bootstrap
-```
-
-That's it. Claude scans your repo, detects the stack, copies and configures all 22 scripts, writes AGENTS.md, seeds the feature list, runs validate.sh, initializes the ratchet, and reports a scorecard grade. Zero manual steps.
-
-### With Any AI Agent (Codex, Cursor, Copilot, Windsurf)
-
-```bash
-curl -sL https://raw.githubusercontent.com/ryanhaqueIT/harness-engineering-template/master/bootstrap.sh | bash
-```
-
-This handles the mechanical parts (copying scripts, creating directories). Then tell your agent:
-
-> "Read ~/.harness/playbooks/01-analyze.md and complete the harness setup for this project."
-
-The agent configures the import rules, writes AGENTS.md, and finishes the intelligent parts.
-
-### Manual (clone and setup)
+## Quick Start
 
 ```bash
-git clone https://github.com/ryanhaqueIT/harness-engineering-template.git my-project
-cd my-project
-bash setup.sh
+# Clone the template
+git clone <this-repo-url> harness-engineering-template
+
+# Install T1 into any Python or Next.js repo
+bash harness-engineering-template/tiers/t1-code-quality/install.sh /path/to/your-repo
 ```
 
-The interactive setup asks for project name, language, framework, and infrastructure tool, then configures everything.
+That's it. The install script:
 
-## The 23-Gate Validation Suite
+1. **Detects stacks** — finds Python (pyproject.toml, setup.py, *.py) and/or Next.js (package.json)
+2. **Installs tools** — ruff, pyright, eslint, prettier, typescript (only what's missing)
+3. **Copies org configs** — only where the repo doesn't already have its own
+4. **Sets up pre-commit hook** — symlinks `.git/hooks/pre-commit` to `.harness/hooks/pre-commit`
+5. **Baselines the ratchet** — counts current violations so future commits can't make things worse
 
-Every line of code passes through `validate.sh`. Nothing gets committed until it exits 0.
+### After install
 
-| Layer | Gates | What They Verify |
-|-------|-------|-----------------|
-| **1. Deterministic** | B1 (lint), B2 (format), B7 (types), F1-F3 | Code is syntactically correct |
-| **2. Structural** | B4 (imports), B5 (golden principles), B6 (architecture), X1-X2 | Architecture rules followed, no secrets |
-| **3. Unit/Integration** | B3 (pytest), F4-F5 (frontend tests) | Behavior is correct |
-| **4. Functional** | F6-F7 (HTTP smoke, API contract) | Endpoints respond correctly |
-| **5. App Legibility** | F8 (Playwright + `playwright_gate.py`) | UI works — navigate, click, fill, assert via accessibility tree |
-| **6. Observability** | O1 (`check_observability.sh`) | LogsQL: no ERRORs/PANICs. PromQL: p95 < 2s |
-| **7. PRD Enforcement** | X5 (feature checklist), X6 (live feature tests) | Features mechanically verified against running app |
-| **Ratchet** | R1 | Quality can never regress |
+```bash
+# Just commit normally — the hook runs automatically
+git commit -m "my change"
+# → pre-commit fires → validate-t1.sh → blocks if any gate fails
 
-## End-to-End Flow: PRD to Verified Code
+# Run gates manually
+bash .harness/validate-t1.sh
 
-This is how harness engineering replaces human review with mechanical verification.
+# Check ratchet status
+python3 .harness/ratchet-t1.py
 
-```
-┌─────────────────────────────────────────────────────────┐
-│  1. PROVIDE PRD                                         │
-│     Drop your PRD into docs/product-specs/              │
-│     Or just describe what you want to the agent         │
-└──────────────────────┬──────────────────────────────────┘
-                       ▼
-┌─────────────────────────────────────────────────────────┐
-│  2. GENERATE PLAN                                       │
-│     Run /plan — agent reads PLANS.md template           │
-│     Outputs: docs/exec-plans/active/feature-name.md     │
-│     Contains: milestones, concrete steps, acceptance    │
-│     criteria as observable outcomes                      │
-└──────────────────────┬──────────────────────────────────┘
-                       ▼
-┌─────────────────────────────────────────────────────────┐
-│  3. SEED FEATURE LIST                                   │
-│     Agent writes .harness/feature_list.json              │
-│     Each PRD requirement becomes a feature with:        │
-│     - Executable steps (Send POST, Verify 201, etc.)    │
-│     - Expected values (response.total equals 60.50)     │
-│     - passes: false (not yet verified)                  │
-│     THE AGENT CANNOT CHANGE THESE STEPS LATER           │
-└──────────────────────┬──────────────────────────────────┘
-                       ▼
-┌─────────────────────────────────────────────────────────┐
-│  4. IMPLEMENT                                           │
-│     Agent reads ExecPlan, writes code milestone by      │
-│     milestone. After each change, runs validate.sh.     │
-│     22 structural gates block bad code mechanically.    │
-│     The Ralph Wiggum Loop: implement → validate →       │
-│     fix → re-validate → until exit 0                    │
-└──────────────────────┬──────────────────────────────────┘
-                       ▼
-┌─────────────────────────────────────────────────────────┐
-│  5. VERIFY FEATURES (the key step)                      │
-│     Agent boots the app: ./scripts/boot_worktree.sh     │
-│                                                         │
-│     Gate X6 (check_features_live.py) executes:          │
-│     ┌───────────────────────────────────────────┐       │
-│     │ API features:                             │       │
-│     │   Sends real HTTP requests to running app │       │
-│     │   Checks status codes, response bodies    │       │
-│     │   Verifies exact field values             │       │
-│     │   Verifies data persisted correctly       │       │
-│     ├───────────────────────────────────────────┤       │
-│     │ UI features:                              │       │
-│     │   Opens headless browser (Playwright)     │       │
-│     │   Navigates pages, fills forms, clicks    │       │
-│     │   Asserts text and elements exist         │       │
-│     │   Saves accessibility tree snapshots      │       │
-│     └───────────────────────────────────────────┘       │
-│     Only features that PASS get flipped to true.        │
-│     The runner does the flipping, not the agent.        │
-└──────────────────────┬──────────────────────────────────┘
-                       ▼
-┌─────────────────────────────────────────────────────────┐
-│  6. COMMIT (only if ALL gates pass)                     │
-│     validate.sh runs all 23 gates:                      │
-│     ✓ Code lints and formats (Layers 1-2)              │
-│     ✓ Architecture rules followed (Layers 3-5)         │
-│     ✓ Unit tests pass (Layer 3)                        │
-│     ✓ UI works in browser (Layer 5)                    │
-│     ✓ No ERROR logs, p95 < 2s (Layer 6)               │
-│     ✓ ALL features verified against running app (L7)   │
-│     ✓ Quality ratchet: can't regress                   │
-│     If any gate fails → COMMIT BLOCKED                  │
-└──────────────────────┬──────────────────────────────────┘
-                       ▼
-┌─────────────────────────────────────────────────────────┐
-│  7. SHIP                                                │
-│     Code is mechanically verified to:                   │
-│     - Follow architecture rules (AST-enforced)          │
-│     - Pass all unit tests                               │
-│     - Have all PRD features working (live-tested)       │
-│     - Render correctly in a browser                     │
-│     - Produce clean logs and fast responses             │
-│     - Never regress from current quality baseline       │
-│     No human review needed.                             │
-└─────────────────────────────────────────────────────────┘
+# Show current baseline
+python3 .harness/ratchet-t1.py --show
 ```
 
-## Key Capabilities
+## What T1 Actually Checks
 
-### Feature List Gate (PRD Enforcement)
-Based on [Anthropic's harness pattern](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents). Features are tracked in `.harness/feature_list.json`. Each has `passes: true/false`. The agent can only flip `passes` to `true` after verification — it cannot remove features, edit descriptions, or skip steps.
+| Gate | Python | Next.js |
+|------|--------|---------|
+| **T1.1 Lint** | `ruff check .` | `npx eslint .` |
+| **T1.2 Format** | `ruff format --check .` | `npx prettier --check .` |
+| **T1.3 Typecheck** | `pyright` | `npx tsc --noEmit` |
+| **T1.4 Tests** | Auto-detected (pytest) | Auto-detected (vitest/jest/npm test) |
 
-### Browser Automation (Playwright)
-`playwright_gate.py` drives the UI like a QA engineer using accessibility tree snapshots (not screenshots). Supports: navigate, click, fill forms, assert text/elements. Saves a11y snapshots for debugging.
+Gates for missing stacks are skipped automatically. A Python-only repo won't see Next.js gates.
 
-### Runtime Observability
-Queries VictoriaLogs (LogsQL) and VictoriaMetrics (PromQL) for real signals: ERROR/PANIC log counts, p95 latency, feature-specific log assertions. Based on [OpenAI's per-worktree observability](https://openai.com/index/harness-engineering/).
+### Test detection cascades
 
-### Quality Ratchet
-`ratchet.py` counts violations across 8 categories and saves a baseline. Violations can only go down, never up. If you make the codebase worse, the commit is blocked.
+The harness doesn't hardcode test commands. It detects them:
 
-### AST-Based Enforcement
-Three Python scripts use Abstract Syntax Tree parsing for unfakeable enforcement:
-- `check_imports.py` — Module dependency boundaries (routers can't import db)
-- `check_golden_principles.py` — No print(), no secrets, type hints, no bare except
-- `check_architecture.py` — No God files, DB containment, config containment, naming
+**Python:** `pyproject.toml [tool.pytest]` → `pytest.ini` → `setup.cfg [tool:pytest]` → `tests/` dir → skip
 
-### AI-Powered PR Review
-`claude-review.yml` runs on every PR. Claude reviews the diff against `QUALITY_SCORE.md` rubric: Code Quality (1-5), Test Quality (1-5), Architecture (1-5), Security (pass/fail), Reliability (pass/fail).
+**Next.js:** `package.json scripts.test` → `vitest.config.*` → `jest.config.*` → skip
 
-### Entropy Management
-- Weekly doc-gardening finds orphan docs and broken references
-- Daily quality scans track metrics and detect drift
-- Entropy cleaner agent hunts stale TODOs, dead code, and dependency drift
-- Harness scorecard grades maturity across 31 checks (A+ through F)
+### The ratchet
 
-## Bootstrap Workflow
+The ratchet tracks 4 numbers: `lint_errors`, `format_errors`, `type_errors`, `test_failures`.
 
-When you run `/bootstrap`, the agent executes four phases:
+On first run, it snapshots your current counts as the baseline. On every subsequent run:
+- **Violations go up** → FAIL (you made it worse)
+- **Violations stay same** → PASS
+- **Violations go down** → PASS + update baseline (improvement is locked in)
 
-| Phase | What Happens |
-|-------|-------------|
-| **0. Discover** | Scans the repo: language, framework, modules, DB library, AI libraries, API endpoints, frontend pages, existing harness |
-| **1. Analyze** | Derives import rules, architecture constants, feature list seed, three-tier boundaries. Traces actual imports to build the dependency DAG |
-| **2. Generate** | Copies 22 scripts, configures them, writes AGENTS.md/CLAUDE.md/copilot-instructions.md, seeds feature list, installs CI workflows and Claude Code integration |
-| **3. Verify** | Runs validate.sh, initializes ratchet baseline, runs scorecard, verifies script syntax and agent file consistency |
+This means teams adopt at their own pace. A repo with 200 lint errors doesn't have to fix them all — it just can't add error 201.
 
-Playbooks: `playbooks/00-discover.md` through `playbooks/03-verify.md`
+## Install Matrix
 
-## Repository Structure
+The install script uses a 2x2 matrix for every tool:
+
+| | Tool Missing | Tool Present |
+|---|---|---|
+| **Config Missing** | Install tool + copy org default | Copy org default |
+| **Config Present** | Install tool, leave config alone | Do nothing |
+
+Your existing configs are never overwritten. The harness fills gaps, it doesn't take over.
+
+## AI Coding Tool Compatibility
+
+The harness works with any tool that commits through git, because enforcement happens at the git hook layer.
+
+| Tool | How it works | What happens |
+|------|-------------|--------------|
+| **Claude Code** | Commits trigger `.git/hooks/pre-commit` | Gates run before commit is created. Claude sees failures and can auto-fix. The `post-edit.sh` hook can also be wired into Claude Code's hook system for instant lint feedback on every file save. |
+| **GitHub Copilot** (in VS Code/JetBrains) | Copilot suggests code, you commit | Pre-commit hook catches any quality issues Copilot introduced. Copilot Chat can read gate output to help fix. |
+| **Cursor / Windsurf** | AI edits files, commits through git | Same pre-commit enforcement. These tools see the hook failure in their terminal and can iterate. |
+| **OpenCode / RooCode** | Terminal-based agents that use git | Pre-commit hook blocks bad commits. Agent sees the error output and can fix-and-retry. |
+| **Any CI system** | Run `bash .harness/validate-t1.sh` as a CI step | Same gates, same output, same exit codes. CI catches what local hooks missed. |
+
+The key insight: **the harness doesn't care who writes the code.** Human, AI, or a mix — the pre-commit hook runs the same gates. AI tools that can read terminal output (Claude Code, OpenCode, RooCode, Cursor) will see the failure message and can auto-fix.
+
+For Claude Code specifically, `post-edit.sh` provides a tighter feedback loop — lint runs after every file edit, not just at commit time. This means Claude sees issues within seconds of writing them instead of at commit time.
+
+Future tiers will include a **project memory architecture** — a structured `docs/` layout that gives AI agents navigable context about the codebase (architecture, conventions, decisions, domain boundaries). Instead of every agent re-discovering the project from scratch, memory files act as a routing table so agents load only the context relevant to their current task. This reduces hallucination, keeps AI-generated code consistent with project conventions, and means fewer gate failures in the first place.
+
+## Day-to-Day
+
+After install, the harness is invisible. Developers commit normally — the pre-commit hook runs, blocks if something fails, and shows exactly which gate broke. Tech leads can check any repo's ratchet baseline to track improvement over time. Platform teams install T1 across repos in bulk — same gates everywhere, each repo keeps its own configs and baselines.
+
+## What Gets Installed in Your Repo
 
 ```
-harness-engineering-template/
-  bootstrap.sh              # Agent-agnostic bootstrap script
-  setup.sh                  # Interactive setup (clone-and-use)
-  AGENTS.md                 # Entry point for AI agents
-  PLANS.md                  # ExecPlan template and rules
-  playbooks/
-    00-discover.md          # Phase 0: repo scanning
-    01-analyze.md           # Phase 1: architecture analysis
-    02-generate.md          # Phase 2: harness generation
-    03-verify.md            # Phase 3: verification
-  scripts/
-    validate.sh             # THE UNIVERSAL GATE (22 gates)
-    check_imports.py        # AST-based import boundary enforcement
-    check_golden_principles.py  # AST-based golden principles
-    check_architecture.py   # AST-based architecture invariants
-    check_features.py       # Feature list PRD gate
-    playwright_gate.py      # Browser automation via a11y tree
-    check_observability.sh  # LogsQL + PromQL verification
-    check_ui_legibility.sh  # HTTP-based UI smoke tests
-    check_e2e_deployed.sh   # E2E against deployed instance
-    ratchet.py              # Forward-only quality ratchet
-    harness_scorecard.py    # 31-check maturity scorecard
-    boot_worktree.sh        # Per-worktree app booting
-    query_logs.sh           # LogsQL query helper
-    query_metrics.sh        # PromQL query helper
-  agents/
-    bootstrapper.md         # Bootstrap agent definition
-    planner.md              # ExecPlan generation agent
-    reviewer.md             # Code review agent
-    entropy-cleaner.md      # Entropy detection agent
-  .claude/
-    commands/               # Slash commands (/validate, /bootstrap, /scorecard, etc.)
-    hooks/                  # Pre-commit and post-edit hooks
-    settings.json           # Permissions and hook configuration
-  .github/workflows/
-    ci.yml                  # CI pipeline (all gates)
-    claude-review.yml       # AI-powered PR review
-    quality-scan.yml        # Daily quality dashboard
-    doc-gardening.yml       # Weekly documentation entropy scan
-  docs/
-    QUALITY_SCORE.md        # Grading rubric
-    SECURITY.md             # Security standards
-    RELIABILITY.md          # Reliability standards
-    design-docs/            # Locked architectural decisions
-    exec-plans/             # Active and completed execution plans
-    product-specs/          # Feature specifications
-  .harness/
-    feature_list.json       # PRD feature tracking
-    baseline.json           # Ratchet quality baseline
-  docker-compose.observability.yml  # VictoriaLogs + VictoriaMetrics + Vector
+your-repo/
+├── .harness/
+│   ├── validate-t1.sh          # The gate runner
+│   ├── ratchet-t1.py           # The ratchet (baseline tracking)
+│   ├── t1-baseline.json        # Current violation counts (gitignored)
+│   ├── manifest.json           # Which tiers are installed
+│   └── hooks/
+│       ├── pre-commit          # Wrapper that calls validate-t1.sh
+│       └── post-edit.sh        # Quick lint for AI coding tools
+├── .git/hooks/
+│   └── pre-commit → ../../.harness/hooks/pre-commit  (symlink)
+├── ruff.toml                   # Only if you didn't have one
+├── pyrightconfig.json          # Only if you didn't have one
+├── eslint.config.mjs           # Only if you didn't have one (Next.js)
+├── prettier.config.mjs         # Only if you didn't have one (Next.js)
+└── tsconfig.json               # Only if you didn't have one (Next.js)
 ```
 
-## Credits
+## Escape Hatches
 
-This methodology synthesizes:
-- [OpenAI's "Harness engineering: leveraging Codex in an agent-first world"](https://openai.com/index/harness-engineering/) (February 2026) — 7-layer pyramid, application legibility, per-worktree observability
-- [Anthropic's "Effective harnesses for long-running agents"](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents) (November 2025) — Feature list gate, browser automation, session verification protocol
-- [Stripe's "Minions: one-shot end-to-end coding agents"](https://stripe.dev/blog/minions-stripes-one-shot-end-to-end-coding-agents) — CI-as-feedback-loop, two-attempt maximum, context-over-iteration
-- [agentic-harness-bootstrap](https://github.com/) — 4-phase playbook workflow, three-tier boundaries, standing maintenance orders
+- **Skip the hook once:** `git commit --no-verify` (use sparingly)
+- **Customize tool configs:** edit the copied config files (ruff.toml, eslint.config.mjs, etc.) — the harness uses whatever config is in your repo
+- **Exclude directories from scanning:** set `RUFF_EXCLUDES` and `ESLINT_EXCLUDES` in `validate-t1.sh`
+- **Reset the ratchet baseline:** delete `.harness/t1-baseline.json` and run `python3 .harness/ratchet-t1.py` to re-baseline
+- **Uninstall completely:** remove `.harness/`, the config files it added, and `.git/hooks/pre-commit`
 
-## License
+## Tier Roadmap
 
-MIT
+### T2: Architecture (design only)
+
+Structural rules with configurable thresholds. Import boundary enforcement (which modules can import what), god file detection (files over N lines), and golden principles (no print(), structured logging, type hints required, no bare except).
+
+T2 also introduces **agent memory** — a file-based context architecture (`docs/` with INDEX.md, architecture.md, conventions.md, decisions.md) that AI coding tools can read to understand the project without scanning every file. Same categories org-wide, thresholds per-repo. → [T2 Design Doc](tiers/t2-architecture/README.md)
+
+### T3: App Testing (design only)
+
+Standardized app boot via a `boot.sh` contract. Every repo provides a script that starts the app and writes `instance-metadata.json` with connection details. This enables automated API smoke tests, UI legibility checks, and E2E critical path tests — all without knowing how each team's app starts.
+
+→ [T3 Design Doc](tiers/t3-app-testing/README.md)
+
+### T4: Product Verification (design only)
+
+Bridges the gap between PRDs and code. Requirements are extracted into a structured `feature_list.json` with immutable verification steps. The harness mechanically executes each step against the running app and reports which features pass, which fail, and which haven't been tested.
+
+→ [T4 Design Doc](tiers/t4-product-verification/README.md)
+
+## Orchestrator
+
+When multiple tiers are installed, the orchestrator runs them in order:
+
+```bash
+bash orchestrator/validate-all.sh              # stop on first failure
+bash orchestrator/validate-all.sh --continue   # run all, report at end
+```
+
+It reads `.harness/manifest.json` to discover installed tiers.
+
+## Prior Art
+
+The v0 monolithic harness (22 gates, 23 scripts, 4 playbooks) is preserved on the `master` branch. This tiered restructure replaces it with something teams can actually adopt incrementally.

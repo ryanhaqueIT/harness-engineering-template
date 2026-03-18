@@ -5,8 +5,9 @@ __pycache__/
 *.pyc
 site-packages/
 
-# Build output
+# Build output / caches
 .next/
+.ruff_cache/
 dist/
 build/
 *.egg-info/

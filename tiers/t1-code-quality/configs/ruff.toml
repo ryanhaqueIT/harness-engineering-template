@@ -1,0 +1,11 @@
+# Org default: ruff configuration
+# Copied by harness install when no ruff config exists in target repo.
+
+line-length = 88
+target-version = "py311"
+
+[lint]
+select = ["E", "F", "W", "I"]
+
+[lint.isort]
+known-first-party = []
