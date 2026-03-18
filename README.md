@@ -12,14 +12,20 @@ AI agents replicate patterns already present in a repository — including bad o
 
 ### With Claude Code (fully automatic)
 
-One-time install (any machine):
+**Step 1** — Install the bootstrap command globally (one time per machine):
 ```bash
 mkdir -p ~/.claude/commands
 curl -o ~/.claude/commands/bootstrap.md \
   https://raw.githubusercontent.com/ryanhaqueIT/harness-engineering-template/master/.claude/commands/bootstrap.md
 ```
 
-Then from inside any repo:
+**Step 2** — Open your target repo in Claude Code:
+```bash
+cd /path/to/your-project
+claude
+```
+
+**Step 3** — Run the bootstrap inside Claude Code:
 ```
 /bootstrap
 ```
