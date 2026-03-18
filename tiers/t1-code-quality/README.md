@@ -73,46 +73,45 @@ Runs once per repo onboarding. Steps:
 
 1. Detect stack(s) (Python / Next.js / both).
 2. For each gate, apply the 2x2 matrix above:
-   - Install missing tools (`pip install ruff pyright pytest`,
-     `npm i -D eslint prettier typescript vitest`).
+   - Install missing tools (`pip install ruff pyright`,
+     `npm i -D eslint prettier typescript`).
    - Copy missing configs from `configs/`.
-3. Register a **git pre-commit hook** that calls `post-edit.sh`.
-4. Write `.harness/t1-manifest.json` recording what was installed and which
-   configs were copied.
-5. Run **auto-baseline ratchet**: execute all four gates, capture current
-   counts, and write them to `.harness/ratchet-t1.json` so the first CI run
-   has a baseline to compare against.
+3. Copy `validate-t1.sh`, `ratchet-t1.py`, and `post-edit.sh` into `.harness/`.
+4. Register a **git pre-commit hook** (symlink) that calls `validate-t1.sh`.
+5. Write `.harness/manifest.json` recording which tiers and stacks are installed.
+6. Run **auto-baseline ratchet**: execute `ratchet-t1.py` which counts current
+   violations and writes them to `.harness/t1-baseline.json`.
+7. Update `.gitignore` to exclude the baseline and instance-metadata files.
 
 ### `validate-t1.sh`
 
-Runs in CI on every push / PR. For each applicable gate it:
+Runs on every commit (via pre-commit hook) or manually. For each applicable gate it:
 
-1. Runs the tool (e.g. `ruff check .`).
-2. Counts errors.
-3. Compares the count to the ratchet baseline.
-4. **Passes** if count <= baseline; **fails** if count > baseline.
-5. If count < baseline, updates the ratchet file (counts can only go down).
+1. Checks if the tool is available.
+2. Runs the tool (e.g. `ruff check .`).
+3. **Passes** if the tool exits 0; **fails** if non-zero.
+4. Skips the gate (yellow) if the tool isn't installed.
 
-Exit code is non-zero if any gate exceeds its baseline.
+Exit code is non-zero if any gate fails. Skips don't count as failures.
 
 ### `ratchet-t1.py`
 
-Maintains `.harness/ratchet-t1.json` with four tracked categories:
+Maintains `.harness/t1-baseline.json` with four tracked categories:
 
 ```json
 {
   "lint_errors": 42,
   "format_errors": 0,
   "type_errors": 7,
-  "test_failures": 3,
-  "updated_at": "2026-03-18T00:00:00Z"
+  "test_failures": 3
 }
 ```
 
 - Values can only **decrease** (ratchet behavior).
-- On each run, the script re-measures, compares, and either passes (count <=
+- On first run, auto-creates the baseline from current counts (no `--init` needed).
+- On each subsequent run, re-measures, compares, and either passes (count <=
   stored) or fails (count > stored).
-- When a count drops, the file is rewritten and should be committed.
+- When a count drops, the baseline is rewritten (improvement locked in).
 
 ### `post-edit.sh`
 
@@ -129,39 +128,37 @@ Lightweight hook executed after every save / pre-commit. It:
 ### Onboard a Python repo
 
 ```bash
-cd ~/projects/my-python-api
-/path/to/harness/tiers/t1-code-quality/install.sh
-# --> installs ruff, pyright, pytest (if missing)
+bash /path/to/harness/tiers/t1-code-quality/install.sh ~/projects/my-python-api
+# --> installs ruff, pyright (if missing)
 # --> copies ruff.toml, pyrightconfig.json (if missing)
-# --> writes .harness/t1-manifest.json
-# --> baselines ratchet counts
+# --> writes .harness/manifest.json
+# --> baselines ratchet counts to .harness/t1-baseline.json
 ```
 
 ### Onboard a Next.js repo
 
 ```bash
-cd ~/projects/my-nextjs-app
-/path/to/harness/tiers/t1-code-quality/install.sh
+bash /path/to/harness/tiers/t1-code-quality/install.sh ~/projects/my-nextjs-app
 # --> installs eslint, prettier, typescript (if missing)
-# --> copies eslint.config.mjs, prettier.config.mjs, tsconfig.base.json (if missing)
-# --> writes .harness/t1-manifest.json
-# --> baselines ratchet counts
+# --> copies eslint.config.mjs, prettier.config.mjs, tsconfig.json (if missing)
+# --> writes .harness/manifest.json
+# --> baselines ratchet counts to .harness/t1-baseline.json
 ```
 
-### Run validation in CI
+### Run validation
 
 ```bash
-./tiers/t1-code-quality/validate-t1.sh
-# exit 0 = all gates pass (at or below ratchet baseline)
-# exit 1 = at least one gate regressed
+bash .harness/validate-t1.sh
+# exit 0 = all gates pass
+# exit 1 = at least one gate failed
 ```
 
 ### Check ratchet status
 
 ```bash
-python tiers/t1-code-quality/ratchet-t1.py --status
-# lint_errors:    42 (baseline 42) OK
-# format_errors:   0 (baseline  0) OK
-# type_errors:     5 (baseline  7) IMPROVED -- updating baseline
-# test_failures:   3 (baseline  3) OK
+python3 .harness/ratchet-t1.py --show
+# lint_errors          42
+# format_errors         0
+# type_errors           7
+# test_failures         3
 ```

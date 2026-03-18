@@ -174,7 +174,7 @@ Standardized app boot via a `boot.sh` contract. Every repo provides a script tha
 
 ### T4: Product Verification (design only)
 
-Bridges the gap between PRDs and code. Requirements are extracted into a structured `feature_list.json` with immutable verification steps. The harness mechanically executes each step against the running app and reports which features pass, which fail, and which haven't been tested.
+Bridges the gap between PRD+ERD and code. The PRD defines what the product should do (features, user flows, acceptance criteria) and the ERD defines the data model (entities, relationships, constraints). Together they're the complete specification. Requirements are extracted into a structured `feature_list.json` with immutable verification steps. The harness mechanically executes each step against the running app and reports which features pass, which fail, and which haven't been tested.
 
 → [T4 Design Doc](tiers/t4-product-verification/README.md)
 

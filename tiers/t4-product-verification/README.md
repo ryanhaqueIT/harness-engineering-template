@@ -6,9 +6,18 @@
 
 Engineers build features. Product managers write requirements. But the bridge between them — *did we actually build what was specified?* — is usually a manual review or a Jira status update. Nobody mechanically verifies the product works as described.
 
+## The Inputs: PRD + ERD
+
+Every product needs two artifacts to be fully specified:
+
+- **PRD (Product Requirements Document)** — defines *what* the product does: features, user flows, acceptance criteria. This feeds `feature_list.json`.
+- **ERD (Entity Relationship Diagram)** — defines *how* the data is structured: entities, relationships, constraints. This informs T3's API smoke tests (correct response shapes) and T2's architectural rules (which modules own which data).
+
+Together, the PRD and ERD are the complete specification. T4 verifies the product against the PRD. The ERD ensures the data model underneath is correct.
+
 ## The Solution: PRD Bridge via feature_list.json
 
-Requirements from Jira/Confluence/PRDs are extracted into a structured `feature_list.json`:
+Requirements from the PRD are extracted into a structured `feature_list.json`:
 
 ```json
 {
