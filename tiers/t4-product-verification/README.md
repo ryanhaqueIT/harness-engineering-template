@@ -11,9 +11,9 @@ Engineers build features. Product managers write requirements. But the bridge be
 Every product needs two artifacts to be fully specified:
 
 - **PRD (Product Requirements Document)** — defines *what* the product does: features, user flows, acceptance criteria. This feeds `feature_list.json`.
-- **ERD (Entity Relationship Diagram)** — defines *how* the data is structured: entities, relationships, constraints. This informs T3's API smoke tests (correct response shapes) and T2's architectural rules (which modules own which data).
+- **ERD (Engineering Requirements Document)** — defines *how* to build it: architecture decisions, API contracts, data models, tech stack choices, infrastructure requirements, non-functional requirements (performance, security, scalability). This informs T2's architectural rules, T3's API smoke tests (correct endpoints and response shapes), and the overall engineering approach.
 
-Together, the PRD and ERD are the complete specification. T4 verifies the product against the PRD. The ERD ensures the data model underneath is correct.
+Together, the PRD and ERD are the complete specification. The PRD says what the product does, the ERD says how it's engineered. T4 verifies the product against the PRD. The ERD ensures the engineering underneath is sound across T2 and T3.
 
 ## The Solution: PRD Bridge via feature_list.json
 
