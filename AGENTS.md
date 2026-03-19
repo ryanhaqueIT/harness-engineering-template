@@ -42,6 +42,7 @@ Violations are caught by validate.sh. These are not suggestions.
 3. **Module boundaries** — routers cannot import db or AI layers directly. `scripts/check_imports.py` enforces the DAG above.
 4. **No God files** — `scripts/check_architecture.py` flags files exceeding size/responsibility thresholds.
 5. **Research before guessing** — When a gate fails and the root cause is unclear (dependency conflicts, runtime errors, version incompatibilities), use web search to find the exact issue and fix BEFORE attempting trial-and-error. Link the source (GitHub issue, PR, docs) in the commit message. Guessing wastes CI runs and introduces wrong fixes.
+6. **Infrastructure as Code — no manual resource creation** — ALL infrastructure (Lambda functions, IAM roles, Cloud Run services, databases, buckets, OIDC providers, WAF rules) MUST be defined in code (CDK, Terraform, CloudFormation, or deployment scripts in `.github/workflows/`) and deployed via CI pipeline. NEVER create resources manually via CLI or console. Enforced by `scripts/check_golden_principles.py` — scans for manual infra commands outside CI/IaC directories.
 
 ## Feature List Gate
 
