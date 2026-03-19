@@ -41,6 +41,7 @@ Violations are caught by validate.sh. These are not suggestions.
 2. **Structured logging only** — `logger.info()` with correlation_id. Never `print()`. Enforced by golden principles check.
 3. **Module boundaries** — routers cannot import db or AI layers directly. `scripts/check_imports.py` enforces the DAG above.
 4. **No God files** — `scripts/check_architecture.py` flags files exceeding size/responsibility thresholds.
+5. **Research before guessing** — When a gate fails and the root cause is unclear (dependency conflicts, runtime errors, version incompatibilities), use web search to find the exact issue and fix BEFORE attempting trial-and-error. Link the source (GitHub issue, PR, docs) in the commit message. Guessing wastes CI runs and introduces wrong fixes.
 
 ## Feature List Gate
 
