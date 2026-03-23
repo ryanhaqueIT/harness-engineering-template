@@ -53,6 +53,7 @@ Every ExecPlan MUST contain these sections:
 
 7. **Plan of Work** -- Prose describing the edits, organized into milestones. Each milestone:
    - Brief opening paragraph describing scope
+   - **Demo Statement** (REQUIRED): "When I do X, I observe Y" — a plain English description of the observable outcome. This forces clarity about what "done" means before coding begins.
    - What will exist at completion that didn't before
    - Commands to run and expected observable results
    - Each milestone independently verifiable
@@ -115,9 +116,13 @@ Copy this template to `docs/exec-plans/active/your-plan-name.md`:
 
 ### Milestone 1: [Name]
 
+**Demo:** [When I do X, I observe Y. e.g., "When I run `curl http://localhost:8000/health`, I see `{"status": "healthy"}` with HTTP 200."]
+
 [Scope paragraph. What exists at completion. Commands to verify.]
 
 ### Milestone 2: [Name]
+
+**Demo:** [When I do X, I observe Y. Observable outcome that proves this milestone works.]
 
 [Scope paragraph. What exists at completion. Commands to verify.]
 

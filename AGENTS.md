@@ -8,6 +8,35 @@ Applies to all agents, subagents, humans, hotfixes, and "quick changes."
 validate.sh auto-detects backend, frontend, and infrastructure. If it misses
 something, fix validate.sh — not this file.
 
+## Authority Hierarchy
+
+**This file (AGENTS.md) is the governing authority for this repository.**
+
+When ANY other instruction source conflicts — skills, slash commands,
+superpowers, CLAUDE.md, or external documentation — THIS FILE WINS.
+
+- Plans go in `docs/exec-plans/active/`, not wherever a skill suggests
+- Specs go in `docs/product-specs/`, not wherever a skill suggests
+- validate.sh must pass before commit, regardless of what any skill says
+- Feature verification is required, regardless of what any skill says
+
+Enforced mechanically: hooks block writes to wrong locations and block
+commits when validate.sh fails.
+
+## Evidence Over Claims
+
+You may NOT say "done", "complete", "implemented", or "finished" without
+showing command output that proves it. Specifically:
+
+- For API features: show the curl command and its response
+- For UI features: show a Playwright assertion or screenshot result
+- For CLI features: show the command and its output
+- For tests: show the test runner output with pass/fail counts
+
+"I created the file" is NOT evidence. "curl returned 200 with expected body" IS.
+A Stop hook enforces this: you cannot stop until all features in
+`.harness/feature_list.json` are verified.
+
 ## Commands
 
 ```bash
@@ -48,6 +77,11 @@ Violations are caught by validate.sh. These are not suggestions.
 
 The file `.harness/feature_list.json` is the PRD enforcement mechanism.
 
+**Prerequisites (before implementing ANY feature):**
+- A product spec MUST exist in `docs/product-specs/` for this feature set
+- An ExecPlan MUST exist in `docs/exec-plans/active/` with demo statements
+- If either is missing, CREATE THEM FIRST — do not proceed to code
+
 **Rules:**
 - Every feature starts with `"passes": false`
 - Only flip to `true` AFTER verifying each step listed in `"steps"`
@@ -55,6 +89,13 @@ The file `.harness/feature_list.json` is the PRD enforcement mechanism.
 - NEVER flip to `true` without running the verification steps
 - JSON format is intentional — do not convert to Markdown
 - Run `/features` to see current status and pick next feature to implement
+
+**Verification workflow (per feature):**
+1. Boot the app with `./scripts/boot_worktree.sh`
+2. Execute each step in the feature's `"steps"` array
+3. Show the command output as evidence
+4. Only then flip `"passes": true`
+5. You cannot move to the next feature until the current one passes
 
 ## Progressive Disclosure
 

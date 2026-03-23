@@ -1,34 +1,45 @@
 #!/usr/bin/env bash
-# Pre-commit hook: runs validate.sh before allowing commit.
-# If validate.sh fails, the commit is blocked.
+# Pre-commit gate: blocks ALL git commits unless validate.sh passes.
+# Two-layer defense: this Claude Code hook + .git/hooks/pre-commit.
 #
-# This hook is invoked by Claude Code before any git commit.
-# It enforces THE RULE: nothing gets committed until validate.sh exits 0.
+# Bulletproof version: works without jq, handles edge cases.
 
 set -euo pipefail
 
 # Read hook input from stdin — only run validation on git commit commands
 INPUT=$(cat)
-COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
-if ! echo "$COMMAND" | grep -q '^git commit'; then
+
+# Parse command: try jq first, fallback to grep
+COMMAND=""
+if command -v jq &>/dev/null; then
+    COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
+else
+    # Fallback: extract git commit from raw JSON input
+    COMMAND=$(echo "$INPUT" | grep -oP '"command"\s*:\s*"([^"]*git commit[^"]*)"' | head -1 || true)
+fi
+
+# Only gate on commit commands
+if ! echo "$COMMAND" | grep -q 'git commit'; then
     exit 0
 fi
 
-REPO_ROOT="$(git rev-parse --show-toplevel)"
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+VALIDATE="${REPO_ROOT}/scripts/validate.sh"
 
-if [ ! -f "${REPO_ROOT}/scripts/validate.sh" ]; then
-    echo "ERROR: scripts/validate.sh not found."
-    echo "Run setup.sh to bootstrap the project first."
+if [ ! -f "$VALIDATE" ]; then
+    echo "COMMIT BLOCKED: scripts/validate.sh not found."
+    echo "Run bootstrap to set up the harness first."
     exit 1
 fi
 
 echo "Running pre-commit validation gate..."
-bash "${REPO_ROOT}/scripts/validate.sh"
-EXIT_CODE=$?
-
-if [ $EXIT_CODE -ne 0 ]; then
+if ! bash "$VALIDATE"; then
     echo ""
-    echo "COMMIT BLOCKED: validate.sh exited with code $EXIT_CODE"
-    echo "Fix all failures above, then try again."
-    exit $EXIT_CODE
+    echo "============================================"
+    echo "  COMMIT BLOCKED: validate.sh failed."
+    echo "  Fix all issues above, then retry."
+    echo "  THE RULE: validate.sh must exit 0"
+    echo "  before every commit. No exceptions."
+    echo "============================================"
+    exit 1
 fi
