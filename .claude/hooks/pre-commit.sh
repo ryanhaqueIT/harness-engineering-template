@@ -27,19 +27,19 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 VALIDATE="${REPO_ROOT}/scripts/validate.sh"
 
 if [ ! -f "$VALIDATE" ]; then
-    echo "COMMIT BLOCKED: scripts/validate.sh not found."
-    echo "Run bootstrap to set up the harness first."
-    exit 1
+    echo "COMMIT BLOCKED: scripts/validate.sh not found." >&2
+    echo "Run bootstrap to set up the harness first." >&2
+    exit 2
 fi
 
 echo "Running pre-commit validation gate..."
 if ! bash "$VALIDATE"; then
-    echo ""
-    echo "============================================"
-    echo "  COMMIT BLOCKED: validate.sh failed."
-    echo "  Fix all issues above, then retry."
-    echo "  THE RULE: validate.sh must exit 0"
-    echo "  before every commit. No exceptions."
-    echo "============================================"
-    exit 1
+    echo "" >&2
+    echo "============================================" >&2
+    echo "  COMMIT BLOCKED: validate.sh failed." >&2
+    echo "  Fix all issues above, then retry." >&2
+    echo "  THE RULE: validate.sh must exit 0" >&2
+    echo "  before every commit. No exceptions." >&2
+    echo "============================================" >&2
+    exit 2
 fi

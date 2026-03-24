@@ -4,7 +4,13 @@
       "Bash(*)",
       "Edit",
       "Write",
-      "Read"
+      "Read",
+      "Glob",
+      "Grep",
+      "Agent",
+      "NotebookEdit",
+      "WebFetch",
+      "WebSearch"
     ],
     "deny": [
       "Bash(rm -rf /)",
@@ -50,6 +56,16 @@
           {
             "type": "command",
             "command": "python scripts/stop_verification.py"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/validate.sh"
           }
         ]
       }
