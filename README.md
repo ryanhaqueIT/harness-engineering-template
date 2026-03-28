@@ -2,7 +2,7 @@
 
 > 22 validation gates. 7 layers of testing. Zero human review bottleneck. Deploy the full harness into any repo with one command.
 
-![Harness Engineering Template — Architecture Mind Map](docs/assets/harness-architecture-mindmap.png)
+![Harness Engineering — Scaling AI Development Without the Human Bottleneck](docs/assets/harness-architecture-overview.png)
 
 ## What Is Harness Engineering?
 
