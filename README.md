@@ -2,6 +2,8 @@
 
 > 22 validation gates. 7 layers of testing. Zero human review bottleneck. Deploy the full harness into any repo with one command.
 
+![Harness Engineering Template — Architecture Mind Map](docs/assets/harness-architecture-mindmap.png)
+
 ## What Is Harness Engineering?
 
 Harness engineering is the discipline of designing environments, constraints, and feedback loops that enable AI coding agents to write reliable software at scale. Instead of writing code directly, engineers design the system that makes agents write *good* code.
