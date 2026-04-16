@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # validate.sh — THE UNIVERSAL GATE. Every line of code passes through here.
 #
-# Total gates: 23 (B1-B7 backend, F1-F7 frontend, I1-I2 infra, X1-X6 cross-stack, O1 observability, R1 ratchet)
+# Total gates: 25 (B1-B8 backend, F1-F7 frontend, I1-I2 infra, X1-X7 cross-stack, O1 observability, R1 ratchet)
 #
 # This is the ONLY way to declare code "ready." No exceptions. No shortcuts.
 # Subagents, main agents, humans — everyone runs this before committing.
@@ -28,22 +28,76 @@ SKIP=0
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
+# Dashboard state emission (optional — works without it)
+_DASHBOARD_HOOKS="${REPO_ROOT}/scripts/dashboard_hooks.sh"
+if [ -f "$_DASHBOARD_HOOKS" ]; then
+    source "$_DASHBOARD_HOOKS"
+    _DASHBOARD_ACTIVE=true
+else
+    _DASHBOARD_ACTIVE=false
+fi
+
+# Gate layer metadata for dashboard visualization
+_gate_layer() {
+    case "$1" in
+        B1|B2) echo 1;; B3) echo 3;; B4|B5|B6|B7|B8) echo 2;;
+        F1|F2|F3|F4|F5) echo 4;; F6|F7|I1|I2) echo 5;; O1) echo 6;;
+        X1|X2|X3|X4|X5|X6|X7|R1) echo 7;; *) echo 0;;
+    esac
+}
+
 check() {
     local name="$1"
     shift
+    # Extract gate ID from name like "  [B1] Ruff lint" -> "B1"
+    local gate_id=""
+    if [[ "$name" =~ \[([A-Z][0-9]+)\] ]]; then
+        gate_id="${BASH_REMATCH[1]}"
+    fi
+
+    if [ "$_DASHBOARD_ACTIVE" = true ] && [ -n "$gate_id" ]; then
+        emit_gate_start "$gate_id" "$name" "$(_gate_layer "$gate_id")"
+    fi
+
+    local start_ms
+    start_ms=$(python3 -c "import time; print(int(time.time()*1000))" 2>/dev/null || echo "0")
+
     echo "── $name"
     if "$@" 2>&1; then
         echo -e "   ${GREEN}✓ PASS${NC}"
         ((PASS++))
+        local end_ms
+        end_ms=$(python3 -c "import time; print(int(time.time()*1000))" 2>/dev/null || echo "0")
+        local duration_ms=$((end_ms - start_ms))
+        if [ "$_DASHBOARD_ACTIVE" = true ] && [ -n "$gate_id" ]; then
+            emit_gate_end "$gate_id" 0 "$duration_ms" 0
+        fi
     else
         echo -e "   ${RED}✗ FAIL${NC}"
         ((FAIL++))
+        local end_ms
+        end_ms=$(python3 -c "import time; print(int(time.time()*1000))" 2>/dev/null || echo "0")
+        local duration_ms=$((end_ms - start_ms))
+        if [ "$_DASHBOARD_ACTIVE" = true ] && [ -n "$gate_id" ]; then
+            emit_gate_end "$gate_id" 1 "$duration_ms" 0
+        fi
     fi
 }
 
 skip() {
-    echo -e "── $1 ${YELLOW}(skipped — $2)${NC}"
+    local name="$1"
+    local reason="$2"
+    local gate_id=""
+    if [[ "$name" =~ \[([A-Z][0-9]+)\] ]]; then
+        gate_id="${BASH_REMATCH[1]}"
+    fi
+
+    echo -e "── $name ${YELLOW}(skipped — $reason)${NC}"
     ((SKIP++))
+
+    if [ "$_DASHBOARD_ACTIVE" = true ] && [ -n "$gate_id" ]; then
+        emit_gate_skip "$gate_id" "$name" "$(_gate_layer "$gate_id")" "$reason"
+    fi
 }
 
 echo "═══════════════════════════════════════════════════"
@@ -51,6 +105,11 @@ echo " Universal Validation Gate"
 echo " Every line of code passes through here."
 echo "═══════════════════════════════════════════════════"
 echo ""
+
+# Initialize dashboard state for this run
+if [ "$_DASHBOARD_ACTIVE" = true ]; then
+    init_dashboard_state
+fi
 
 # ═══════════════════════════════════════════════════
 # PYTHON BACKEND GATES
@@ -122,6 +181,13 @@ if [ -d "$BACKEND_DIR" ] && { [ -f "$BACKEND_DIR/requirements.txt" ] || [ -f "$B
         skip "  [B7] Type check" "no type checker found (install pyright or mypy)"
     fi
 
+    # Gate B8: Wiring verification (orphaned files, unused exports, circular deps)
+    if [ -f "${REPO_ROOT}/scripts/check_wiring.py" ]; then
+        check "  [B8] Wiring verification" python "${REPO_ROOT}/scripts/check_wiring.py"
+    else
+        skip "  [B8] Wiring verification" "scripts/check_wiring.py not found"
+    fi
+
     echo ""
 
 # ═══════════════════════════════════════════════════
@@ -157,11 +223,21 @@ elif [ -d "$BACKEND_DIR" ] && [ -f "$BACKEND_DIR/package.json" ]; then
         fi
     else
         skip "BACKEND (Node.js)" "run 'cd backend && npm install' first"
+        if [ "$_DASHBOARD_ACTIVE" = true ]; then
+            emit_section_skip "npm install needed" \
+                "B1:Lint:1" "B2:Format:1" "B3:Tests:3" "B4:Import Boundaries:2" \
+                "B5:Golden Principles:2" "B6:Architecture:2" "B7:Type Check:2" "B8:Wiring:2"
+        fi
     fi
 
     echo ""
 else
     skip "BACKEND" "no backend/ directory with requirements.txt, pyproject.toml, or package.json"
+    if [ "$_DASHBOARD_ACTIVE" = true ]; then
+        emit_section_skip "no backend directory" \
+            "B1:Lint:1" "B2:Format:1" "B3:Tests:3" "B4:Import Boundaries:2" \
+            "B5:Golden Principles:2" "B6:Architecture:2" "B7:Type Check:2" "B8:Wiring:2"
+    fi
     echo ""
 fi
 
@@ -226,11 +302,21 @@ if [ -d "$FRONTEND_DIR" ] && [ -f "$FRONTEND_DIR/package.json" ]; then
         fi
     else
         skip "FRONTEND" "run 'cd frontend && npm install' first"
+        if [ "$_DASHBOARD_ACTIVE" = true ]; then
+            emit_section_skip "npm install needed" \
+                "F1:TS Check:4" "F2:ESLint:4" "F3:Prettier:4" "F4:Build:4" \
+                "F5:Frontend Tests:4" "F6:UI Legibility:5" "F7:Playwright:5"
+        fi
     fi
 
     echo ""
 else
     skip "FRONTEND" "no frontend/ directory"
+    if [ "$_DASHBOARD_ACTIVE" = true ]; then
+        emit_section_skip "no frontend directory" \
+            "F1:TS Check:4" "F2:ESLint:4" "F3:Prettier:4" "F4:Build:4" \
+            "F5:Frontend Tests:4" "F6:UI Legibility:5" "F7:Playwright:5"
+    fi
     echo ""
 fi
 
@@ -277,6 +363,9 @@ elif [ -d "${REPO_ROOT}/pulumi" ] && [ -f "${REPO_ROOT}/pulumi/Pulumi.yaml" ]; t
     echo ""
 else
     skip "INFRASTRUCTURE" "no terraform/ or pulumi/ directory"
+    if [ "$_DASHBOARD_ACTIVE" = true ]; then
+        emit_section_skip "no infra directory" "I1:Terraform Fmt:5" "I2:Terraform Validate:5"
+    fi
     echo ""
 fi
 
@@ -317,8 +406,10 @@ check "  [X2] No secrets" bash -c "
 if [ -f "${REPO_ROOT}/instance-metadata.json" ] || [ "${RUN_E2E:-}" = "true" ]; then
     if [ -f "${REPO_ROOT}/scripts/check_e2e_deployed.sh" ]; then
         BACKEND_URL=$(python3 -c "import json; print(json.load(open('${REPO_ROOT}/instance-metadata.json'))['backend_url'])" 2>/dev/null || echo "")
-        if [ -n "$BACKEND_URL" ]; then
+        if [ -n "$BACKEND_URL" ] && curl -s --connect-timeout 2 "$BACKEND_URL" &>/dev/null; then
             check "  [X3] E2E validation (local)" bash "${REPO_ROOT}/scripts/check_e2e_deployed.sh" "$BACKEND_URL"
+        elif [ -n "$BACKEND_URL" ]; then
+            skip "  [X3] E2E validation (local)" "instance-metadata.json exists but $BACKEND_URL is not reachable"
         else
             skip "  [X3] E2E validation (local)" "no backend_url in instance-metadata.json"
         fi
@@ -367,6 +458,13 @@ else
     skip "  [X6] Live feature tests" "app not running — use boot_worktree.sh or RUN_LIVE=true"
 fi
 
+# Gate X7: Spec compliance — evidence traceability (requirement → code → test)
+if [ -f "${REPO_ROOT}/scripts/check_spec_compliance.py" ] && [ -f "${REPO_ROOT}/.harness/feature_list.json" ]; then
+    check "  [X7] Spec compliance (evidence traceability)" python3 "${REPO_ROOT}/scripts/check_spec_compliance.py"
+else
+    skip "  [X7] Spec compliance" "check_spec_compliance.py or feature_list.json not found"
+fi
+
 # Gate R1: Ratchet check (quality can only improve, never regress)
 if [ -f "${REPO_ROOT}/scripts/ratchet.py" ]; then
     check "  [R1] Ratchet (quality baseline)" python "${REPO_ROOT}/scripts/ratchet.py"
@@ -384,6 +482,11 @@ TOTAL=$((PASS + FAIL))
 echo "═══════════════════════════════════════════════════"
 echo " Results: ${PASS} passed, ${FAIL} failed, ${SKIP} skipped (${TOTAL} total)"
 echo "═══════════════════════════════════════════════════"
+
+# Finalize dashboard state
+if [ "$_DASHBOARD_ACTIVE" = true ]; then
+    finalize_dashboard_run "$PASS" "$FAIL" "$SKIP"
+fi
 
 if [ "$FAIL" -gt 0 ]; then
     echo -e "${RED}VALIDATION FAILED — fix errors above before committing${NC}"

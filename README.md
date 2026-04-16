@@ -56,6 +56,19 @@ bash setup.sh
 
 The interactive setup asks for project name, language, framework, and infrastructure tool, then configures everything.
 
+## Live DAG Dashboard
+
+Watch all 25 validation gates execute in real-time with an Airflow-inspired DAG visualization. Zero dependencies — one command opens it in your browser.
+
+![Harness DAG Dashboard — Gates View](docs/dashboard-screenshot.png)
+
+```bash
+bash scripts/dashboard.sh          # Opens the dashboard in your browser
+bash scripts/validate.sh           # Run in another terminal — watch gates light up
+```
+
+**4 views** — Pipeline (development flow), Gates (25 gates in 7 layers), Agents (8 specialized agents), History (Airflow Grid View with run-over-run comparison). Navigate between runs with arrow keys. Click any gate for details. Dark/light theme.
+
 ## The 23-Gate Validation Suite
 
 Every line of code passes through `validate.sh`. Nothing gets committed until it exits 0.
