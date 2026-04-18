@@ -111,7 +111,8 @@ copy_file() {
 # Static scripts (no configuration needed)
 for script in check_features.py check_features.sh playwright_gate.py check_ui_playwright.sh \
               check_observability.sh query_logs.sh query_metrics.sh ratchet.py \
-              harness_scorecard.py review_pr.sh screenshot_baseline.sh track_quality.sh; do
+              harness_scorecard.py review_pr.sh screenshot_baseline.sh track_quality.sh \
+              harness_dashboard.py dashboard_hooks.sh dashboard.sh; do
     copy_file "${HARNESS_DIR}/scripts/${script}" "${TARGET}/scripts/${script}" "scripts/${script}"
 done
 
@@ -126,9 +127,11 @@ echo -e "${BOLD}Copying Claude Code integration...${NC}"
 # Hooks
 copy_file "${HARNESS_DIR}/.claude/hooks/pre-commit.sh" "${TARGET}/.claude/hooks/pre-commit.sh" ".claude/hooks/pre-commit.sh"
 copy_file "${HARNESS_DIR}/.claude/hooks/post-edit.sh" "${TARGET}/.claude/hooks/post-edit.sh" ".claude/hooks/post-edit.sh"
+copy_file "${HARNESS_DIR}/.claude/hooks/pipeline-tracker.py" "${TARGET}/.claude/hooks/pipeline-tracker.py" ".claude/hooks/pipeline-tracker.py"
+copy_file "${HARNESS_DIR}/.claude/hooks/agent-tracker.py" "${TARGET}/.claude/hooks/agent-tracker.py" ".claude/hooks/agent-tracker.py"
 
 # Commands
-for cmd in validate.md scorecard.md features.md ratchet.md review.md plan.md morning-check.md entropy.md; do
+for cmd in validate.md scorecard.md features.md ratchet.md review.md plan.md morning-check.md entropy.md dashboard.md; do
     copy_file "${HARNESS_DIR}/.claude/commands/${cmd}" "${TARGET}/.claude/commands/${cmd}" ".claude/commands/${cmd}"
 done
 
@@ -215,6 +218,9 @@ echo -e "    ${CYAN} already done — configure the remaining scripts and write$
 echo -e "    ${CYAN} AGENTS.md.\"${NC}"
 echo ""
 echo -e "  Or if using Claude Code: ${CYAN}/bootstrap${NC}"
+echo ""
+echo -e "${BOLD}  Live Dashboard:${NC} Watch gates execute in real-time"
+echo -e "    ${CYAN}bash scripts/dashboard.sh${NC}  (or ${CYAN}/dashboard${NC} in Claude Code)"
 echo ""
 echo -e "  Playbooks: ${HARNESS_DIR}/playbooks/"
 echo ""

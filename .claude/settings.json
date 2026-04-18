@@ -37,6 +37,15 @@
             "command": "python .claude/hooks/enforce-locations.py"
           }
         ]
+      },
+      {
+        "matcher": "Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/agent-tracker.py"
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -48,14 +57,43 @@
             "command": "bash .claude/hooks/post-edit.sh"
           }
         ]
+      },
+      {
+        "matcher": "Bash|Edit|Write|Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/loop-detection.py"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/pipeline-tracker.py"
+          }
+        ]
       }
     ],
-    "Stop": [
+    "Stop": [],
+    "PreCompact": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "python scripts/stop_verification.py"
+            "command": "bash .claude/hooks/pre-compact.sh"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/session-recovery.py"
           }
         ]
       }
@@ -65,10 +103,17 @@
         "hooks": [
           {
             "type": "command",
+            "command": "python .claude/hooks/agent-tracker.py"
+          },
+          {
+            "type": "command",
             "command": "bash scripts/validate.sh"
           }
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "playwright@claude-plugins-official": true
   }
 }
