@@ -30,6 +30,14 @@ init_dashboard_state() {
 import json, datetime, pathlib
 state_path = pathlib.Path('${DASHBOARD_STATE_FILE}')
 history_path = pathlib.Path('${DASHBOARD_HISTORY_FILE}')
+# Preserve existing pipeline / agents / scorecard / ratchet across validate.sh runs.
+# Only gates + run metadata are reset per run.
+existing = {}
+if state_path.exists():
+    try:
+        existing = json.loads(state_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        existing = {}
 run_id = 1
 if history_path.exists():
     try:
@@ -38,6 +46,9 @@ if history_path.exists():
             run_id = runs[-1].get('run_id', 0) + 1
     except (json.JSONDecodeError, KeyError):
         run_id = 1
+# Set validate stage to running
+pipeline = existing.get('pipeline', {})
+pipeline['validate'] = {'status': 'running', 'label': 'Running validate.sh'}
 state = {
     'version': 1,
     'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00','Z'),
@@ -45,8 +56,10 @@ state = {
     'status': 'running',
     'duration_ms': 0,
     'gates': {},
-    'scorecard': {'grade': '?', 'score': 0, 'total': 31},
-    'ratchet': {}
+    'pipeline': pipeline,
+    'agents': existing.get('agents', {'active': None, 'task': '', 'agents': {}}),
+    'scorecard': existing.get('scorecard', {'grade': '?', 'score': 0, 'total': 31}),
+    'ratchet': existing.get('ratchet', {})
 }
 state_path.parent.mkdir(parents=True, exist_ok=True)
 state_path.write_text(json.dumps(state, indent=2))
@@ -164,6 +177,12 @@ except (FileNotFoundError, json.JSONDecodeError):
 state['status'] = '${final_status}'
 state['duration_ms'] = ${duration_ms}
 state['timestamp'] = datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00','Z')
+# Update validate pipeline stage with final status
+pipeline = state.setdefault('pipeline', {})
+pipeline['validate'] = {
+    'status': 'completed' if '${final_status}' == 'passed' else 'failed',
+    'label': 'All gates passed' if '${final_status}' == 'passed' else 'Validation failed'
+}
 state_path.write_text(json.dumps(state, indent=2))
 
 # Append to history
