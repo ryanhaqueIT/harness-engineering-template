@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "description": "Ratchet baseline \u2014 violations can only go down, never up.",
+  "violations": {
+    "lint_errors": 0,
+    "format_errors": 1,
+    "import_violations": 0,
+    "architecture_violations": 0,
+    "golden_principle_violations": 0,
+    "todo_fixme_count": 0,
+    "god_files": 0,
+    "test_coverage_ratio": 0.2
+  }
+}
