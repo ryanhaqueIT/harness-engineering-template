@@ -42,3 +42,17 @@ instance-metadata.json
 *-key.json
 *.pem
 credentials.json
+
+# Reference repos
+inspiration/
+
+# Dashboard runtime state
+.harness/dashboard.pid
+.harness/dashboard_state.json
+.harness/loop_state.json
+
+# Playwright MCP
+.playwright-mcp/
+
+# Development screenshots (kept in docs/ for README)
+/*.png

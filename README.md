@@ -60,7 +60,9 @@ The interactive setup asks for project name, language, framework, and infrastruc
 
 Watch all 25 validation gates execute in real-time with an Airflow-inspired DAG visualization. Zero dependencies — one command opens it in your browser.
 
-![Harness DAG Dashboard — Gates View](docs/dashboard-screenshot.png)
+| Gates (DAG View) | History (Airflow Grid View) |
+|---|---|
+| ![Gates View](docs/dashboard-screenshot.png) | ![History View](docs/dashboard-history-screenshot.png) |
 
 ```bash
 bash scripts/dashboard.sh          # Opens the dashboard in your browser
