@@ -49,7 +49,20 @@ inspiration/
 # Dashboard runtime state
 .harness/dashboard.pid
 .harness/dashboard_state.json
+.harness/dashboard.html
 .harness/loop_state.json
+
+# Ship orchestrator local state (runtime, machine-specific)
+.harness/ship_state.json
+.harness/ship_log.md
+.harness/loop_guard_state.json
+.harness/gate_calibration.json
+.harness/evidence.md
+.harness/evidence.json
+.harness/rescue_request.md
+
+# IDE state (Serena, etc.)
+.serena/
 
 # Playwright MCP
 .playwright-mcp/

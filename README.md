@@ -1,6 +1,6 @@
 # Harness Engineering Template
 
-> 22 validation gates. 7 layers of testing. Zero human review bottleneck. Deploy the full harness into any repo with one command.
+> 28 validation gates. 7 layers of testing. End-to-end autonomous build via `/ship`. Adversarial TDD enforced mechanically. Independent codex review on every commit. Zero human review bottleneck. Deploy the full harness into any repo with one command.
 
 ![Harness Engineering — Scaling AI Development Without the Human Bottleneck](docs/assets/harness-architecture-overview.png)
 
@@ -71,19 +71,20 @@ bash scripts/validate.sh           # Run in another terminal — watch gates lig
 
 **4 views** — Pipeline (development flow), Gates (25 gates in 7 layers), Agents (8 specialized agents), History (Airflow Grid View with run-over-run comparison). Navigate between runs with arrow keys. Click any gate for details. Dark/light theme.
 
-## The 23-Gate Validation Suite
+## The 27-Gate Validation Suite
 
-Every line of code passes through `validate.sh`. Nothing gets committed until it exits 0.
+Every line of code passes through `validate.sh`. Nothing gets committed until it exits 0. Backend stack auto-detected from `requirements.txt`, `pyproject.toml`, `package.json`, `go.mod`, `Cargo.toml`, `pom.xml`, or `build.gradle` — same gate IDs across languages.
 
 | Layer | Gates | What They Verify |
 |-------|-------|-----------------|
 | **1. Deterministic** | B1 (lint), B2 (format), B7 (types), F1-F3 | Code is syntactically correct |
-| **2. Structural** | B4 (imports), B5 (golden principles), B6 (architecture), X1-X2 | Architecture rules followed, no secrets |
-| **3. Unit/Integration** | B3 (pytest), F4-F5 (frontend tests) | Behavior is correct |
+| **2. Structural** | B4 (imports), B5 (golden principles), B6 (architecture), B8 (wiring), X1-X2 | Architecture rules followed, no orphans, no secrets |
+| **3. Unit/Integration** | B3 (tests), F4-F5 (frontend tests) | Behavior is correct |
 | **4. Functional** | F6-F7 (HTTP smoke, API contract) | Endpoints respond correctly |
 | **5. App Legibility** | F8 (Playwright + `playwright_gate.py`) | UI works — navigate, click, fill, assert via accessibility tree |
 | **6. Observability** | O1 (`check_observability.sh`) | LogsQL: no ERRORs/PANICs. PromQL: p95 < 2s |
-| **7. PRD Enforcement** | X5 (feature checklist), X6 (live feature tests) | Features mechanically verified against running app |
+| **7. PRD Enforcement** | X5 (feature checklist), X6 (live feature tests), X7 (spec compliance) | Features mechanically verified against running app |
+| **7. Autonomy** | X8 (spec quality), X9 (loop guard, soft), X10 (TDD compliance) | Catches vague specs; detects stuck loops; enforces test-first |
 | **Ratchet** | R1 | Quality can never regress |
 
 ## End-to-End Flow: PRD to Verified Code
@@ -172,6 +173,68 @@ This is how harness engineering replaces human review with mechanical verificati
 └─────────────────────────────────────────────────────────┘
 ```
 
+## Full Autonomy: The `/ship` Command
+
+The 7 steps above are individually invokable (`/plan`, `/build`, `/validate`, …) but `/ship` chains them into a single autonomous pipeline. Given a PRD or a one-line prompt, it walks the entire flow without human intervention:
+
+```
+/ship docs/product-specs/oauth-login.md
+/ship "Add a JSON export endpoint for the invoices service"
+/ship                              # resume an in-flight build
+```
+
+The orchestrator is a state machine (`scripts/ship.py`) persisted to `.harness/ship_state.json`. State survives context compaction — restarting `/ship` resumes from the last completed transition. States:
+
+```
+init → intake → spec_qa → planning → seeding → building
+     ↻ validating ↔ fixing ↔ rescuing
+     → post_review → committing → done
+                                ↘ escalated (human needed)
+```
+
+Three new pieces back this flow:
+
+| Piece | What it does |
+|-------|-------------|
+| **`scripts/check_spec_quality.py`** (gate X8) | Mechanical pre-build review of the active ExecPlan. Blocks vague language, demands Demo statements per milestone, requires assertion-style acceptance criteria. Cheaper to fail here than after a wasted build. |
+| **`scripts/loop_guard.py`** (gate X9) | Fingerprints each failing validate.sh run by (sorted failing gates × normalized error signature). If the last N runs share a fingerprint, raises a rescue signal — `ship.py` then branches from `fixing` to `rescuing`. |
+| **`agents/researcher.md`** | Rescue-path agent. Web-searches the exact failing fingerprint, cross-verifies against official docs and GitHub issues, produces a 3-bullet root-cause analysis with sources. Hands back to `build-fixer` for execution. |
+
+The pipeline tries up to 12 fix+rescue cycles per feature before escalating. Loop fingerprints are stored to `.harness/loop_guard_state.json`; rescue requests go to `.harness/rescue_request.md`; the full transition history is logged to `.harness/ship_log.md`.
+
+### Adversarial TDD — Cross-Model, Enforced Mechanically
+
+The harness mandates the Iron Law of TDD: **no production code without a failing test first**. The adversarial pair runs on **two different models** to maximise the gap between what the tests cover and what the implementation produces:
+
+| Role | Model | Why |
+|------|-------|-----|
+| **Tester** (RED) | **Codex** (via `Skill("codex:rescue")`) | Different training distribution = different blind spots. Catches the cases the impl model would forget. |
+| **Executor** (GREEN) | **Claude** | Implements minimum code against the tests. Never sees the spec — only the tests are the contract. |
+
+If codex is unavailable, the tester falls back to Claude and the build is tagged `tester=claude-fallback`; downstream `adversarial_review` codex findings then get extra weight in the verdict.
+
+Enforcement at four points:
+
+| Layer | Enforcement |
+|-------|-------------|
+| **Skill invocation** | `agents/tester.md` mandates `Skill("superpowers:test-driven-development")` then `Skill("codex:rescue")`. `agents/executor.md` mandates the TDD skill and acknowledges the cross-model split. |
+| **Model separation** | The tester runs on codex, the executor on Claude. Verified by ship.py spawning sequence in the `building` state — same-model fallback is recorded. |
+| **Adversarial information split** | The tester never sees the implementation. The executor never sees the feature spec — only the tests. |
+| **Mechanical gate X10** | `scripts/check_tdd.py` scans the git diff and verifies every changed implementation file has a corresponding test file. Convention-aware: pytest's `test_*.py`, Jest's `*.test.tsx`, Go's `*_test.go`, Java's `*Test.java`. Excludes entry points, config, migrations. |
+
+The gate is convention-based and unfoolable: an agent can't satisfy X10 by writing a test that imports the implementation, because the gate doesn't look inside files — it just verifies the test artefact exists where it should. And the cross-model split means the *content* of those tests is unlikely to share blind spots with the impl.
+
+### Independent Codex Review
+
+Single-model review has a known blind spot: the same model that wrote the code is the model least likely to spot its bugs (same training distribution = same misses). The harness uses the **codex plugin** as a second-opinion model on every build:
+
+| Checkpoint | What codex does |
+|------------|-----------------|
+| **`rescuing` state** | When `loop_guard` fires, codex provides an independent diagnosis *in parallel with* the `researcher` agent's web-sourced analysis. Two diagnoses are compared; the harness routes the higher-confidence one (or merges them if they agree). |
+| **`adversarial_review` state** | After `post_review` passes, codex gets the diff and is prompted to find a defect the tests would miss. `NO DEFECT FOUND` → commit. `DEFECT: SEVERITY: blocker` → back to fixing. `SEVERITY: warning` → commit with the warning logged. |
+
+The codex integration is gated by `Skill("codex:rescue")` — if codex isn't installed, the skill offers to install it; if codex can't be reached, the agent falls back with `CONFIDENCE: low` so the orchestrator knows to weigh it lightly.
+
 ## Key Capabilities
 
 ### Feature List Gate (PRD Enforcement)
@@ -228,11 +291,20 @@ harness-engineering-template/
     02-generate.md          # Phase 2: harness generation
     03-verify.md            # Phase 3: verification
   scripts/
-    validate.sh             # THE UNIVERSAL GATE (22 gates)
+    validate.sh             # THE UNIVERSAL GATE (28 gates, multi-stack)
+    ship.py                 # End-to-end autonomous build orchestrator
+    check_spec_quality.py   # X8 — pre-build spec quality gate
+    loop_guard.py           # X9 — failure fingerprinting + rescue trigger
+    check_tdd.py            # X10 — Iron Law: test files exist for every impl
     check_imports.py        # AST-based import boundary enforcement
     check_golden_principles.py  # AST-based golden principles
     check_architecture.py   # AST-based architecture invariants
+    check_wiring.py         # AST-based dead-code/orphan/cycle detection
     check_features.py       # Feature list PRD gate
+    check_features_live.py  # Live HTTP/Playwright feature verification
+    check_spec_compliance.py # Evidence traceability (req→code→test)
+    gate_calibration.py     # Per-gate false-positive tracking over time
+    workflow.py             # Workflow state machine (researching/building/…)
     playwright_gate.py      # Browser automation via a11y tree
     check_observability.sh  # LogsQL + PromQL verification
     check_ui_legibility.sh  # HTTP-based UI smoke tests
@@ -244,8 +316,14 @@ harness-engineering-template/
     query_metrics.sh        # PromQL query helper
   agents/
     bootstrapper.md         # Bootstrap agent definition
-    planner.md              # ExecPlan generation agent
-    reviewer.md             # Code review agent
+    planner.md              # PRD → ExecPlan agent
+    tester.md               # Adversarial test writer (RED phase) — invokes TDD skill
+    executor.md             # Minimal implementation (GREEN phase) — invokes TDD skill
+    build-fixer.md          # Minimal-diff fix attempts after failed gates
+    researcher.md           # Rescue path — sourced root-cause analysis (parallel w/ codex)
+    codex-reviewer.md       # Independent codex-plugin reviewer (rescue + adversarial)
+    post-build-reviewer.md  # Read-only compliance matrix after build
+    reviewer.md             # General code review agent
     entropy-cleaner.md      # Entropy detection agent
   .claude/
     commands/               # Slash commands (/validate, /bootstrap, /scorecard, etc.)

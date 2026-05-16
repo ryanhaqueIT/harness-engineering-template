@@ -23,6 +23,28 @@ superpowers, CLAUDE.md, or external documentation — THIS FILE WINS.
 Enforced mechanically: hooks block writes to wrong locations and block
 commits when validate.sh fails.
 
+## Mandatory Skill Invocations
+
+Before any build work in this repo, invoke the relevant superpower skills.
+They are not suggestions — they encode discipline the harness depends on:
+
+- `Skill("superpowers:test-driven-development")` before writing any test or
+  implementation. The Iron Law applies: **NO PRODUCTION CODE WITHOUT A
+  FAILING TEST FIRST**. Gate X10 (`scripts/check_tdd.py`) verifies the
+  artefact; the skill enforces the discipline behind it.
+- `Skill("codex:rescue")` whenever the build enters `rescuing` or
+  `adversarial_review` state (`/ship` orchestrator). Codex provides an
+  independent second-opinion review — different model, different blind
+  spots.
+- `Skill("superpowers:systematic-debugging")` when a fix attempt fails.
+- `Skill("superpowers:verification-before-completion")` before claiming
+  any work done. The harness backs this with a stop-hook, but invoking
+  the skill makes the discipline explicit.
+
+The agents under `agents/` (tester, executor, codex-reviewer) all
+declare which skill they must invoke first. If you spawn one of those
+agents directly, it will invoke its required skill before doing anything.
+
 ## Evidence Over Claims
 
 You may NOT say "done", "complete", "implemented", or "finished" without
@@ -44,6 +66,18 @@ A Stop hook enforces this: you cannot stop until all features in
 ./scripts/boot_worktree.sh         # Boot locally (dynamic ports)
 ./scripts/boot_worktree.sh --stop  # Stop local instances
 ./scripts/boot_worktree.sh --check # Health check running instances
+
+# Autonomous build pipeline (orchestrator)
+python scripts/ship.py status                    # Current state + next action
+python scripts/ship.py start --prd <path>        # Begin from a spec
+python scripts/ship.py start --prompt "<goal>"   # Begin from a prompt
+python scripts/ship.py abort                     # Cancel in-flight build
+
+# Pre-build + watchdog gates (also wired into validate.sh as X8/X9/X10)
+python scripts/check_spec_quality.py <plan.md>   # Spec quality gate
+python scripts/loop_guard.py check               # Loop detection
+python scripts/check_tdd.py                      # TDD compliance (Iron Law)
+python -m pytest scripts/tests/                  # Test the harness itself
 
 cd backend && {{LINT_CMD}}         # Lint
 cd backend && {{FORMAT_CMD}}       # Format
