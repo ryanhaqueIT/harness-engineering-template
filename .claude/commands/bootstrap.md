@@ -14,13 +14,23 @@ Run everything below automatically. Do not pause for confirmation unless you enc
 
 ### 2. Fetch Harness Source
 
-Run these commands:
+Always sync `~/.harness` to the latest of the remote's default branch (`main`/`master`).
+Hard-reset so local modifications never silently shadow upstream fixes, and fail
+loudly on network errors instead of proceeding with a stale copy.
+
 ```bash
-if [ ! -d ~/.harness ]; then
-  git clone https://github.com/ryanhaqueIT/harness-engineering-template.git ~/.harness
-else
-  git -C ~/.harness pull --ff-only 2>/dev/null || true
+HARNESS_REPO="https://github.com/ryanhaqueIT/harness-engineering-template.git"
+HARNESS_DIR="${HARNESS_HOME:-$HOME/.harness}"
+
+if [ ! -d "$HARNESS_DIR/.git" ]; then
+  git clone "$HARNESS_REPO" "$HARNESS_DIR"
 fi
+
+git -C "$HARNESS_DIR" fetch --prune origin
+DEFAULT_BRANCH=$(git -C "$HARNESS_DIR" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's@^origin/@@')
+DEFAULT_BRANCH="${DEFAULT_BRANCH:-master}"
+git -C "$HARNESS_DIR" checkout -q "$DEFAULT_BRANCH"
+git -C "$HARNESS_DIR" reset --hard "origin/$DEFAULT_BRANCH"
 ```
 
 ### 3. Discover (Phase 0)

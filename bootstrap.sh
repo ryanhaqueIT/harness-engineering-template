@@ -45,16 +45,26 @@ echo -e "  Target: ${CYAN}${TARGET}${NC}"
 echo ""
 
 # ─── Step 0: Get the harness template ─────────────────────────────────
+# Always sync to the latest of the remote's default branch (main/master).
+# Hard-reset so a stale or modified local clone never silently shadows
+# upstream fixes.  Failures here halt the bootstrap — we'd rather error than
+# carry on with stale content.
 
-if [ -d "$HARNESS_DIR" ]; then
-    echo -e "  ${GREEN}Found${NC} harness template at ${HARNESS_DIR}"
-    echo "  Pulling latest..."
-    git -C "$HARNESS_DIR" pull --ff-only 2>/dev/null || true
-else
+if [ ! -d "$HARNESS_DIR/.git" ]; then
     echo "  Cloning harness template..."
     git clone "$HARNESS_REPO" "$HARNESS_DIR"
     echo -e "  ${GREEN}Cloned${NC} to ${HARNESS_DIR}"
+else
+    echo -e "  ${GREEN}Found${NC} harness template at ${HARNESS_DIR}"
 fi
+
+echo "  Syncing to latest default branch..."
+git -C "$HARNESS_DIR" fetch --prune origin
+DEFAULT_BRANCH=$(git -C "$HARNESS_DIR" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's@^origin/@@')
+DEFAULT_BRANCH="${DEFAULT_BRANCH:-master}"
+git -C "$HARNESS_DIR" checkout -q "$DEFAULT_BRANCH"
+git -C "$HARNESS_DIR" reset --hard "origin/$DEFAULT_BRANCH"
+echo -e "  ${GREEN}Synced${NC} to origin/${DEFAULT_BRANCH}"
 echo ""
 
 # ─── Step 1: Create directory structure ───────────────────────────────
