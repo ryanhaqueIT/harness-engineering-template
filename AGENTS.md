@@ -131,6 +131,58 @@ The file `.harness/feature_list.json` is the PRD enforcement mechanism.
 4. Only then flip `"passes": true`
 5. You cannot move to the next feature until the current one passes
 
+## Guarantee Gates (the four wired-in checks)
+
+Four additional gates make the harness's guarantees hold up mechanically
+rather than on paper. They are wired into `.claude/settings.json` hooks and
+`scripts/validate.sh`:
+
+1. **Stop verification** (`scripts/stop_verification.py`, guaranteed) — wired
+   to the `Stop` hook. Blocks a session from stopping unless every
+   `passes: true` feature in `.harness/feature_list.json` re-derives clean
+   (see the verify schema below). This is the teeth behind "Evidence Over
+   Claims."
+2. **Shell guard** (`.claude/hooks/shell-guard.sh`, guaranteed) — wired into
+   the `PreToolUse` Bash matcher alongside `pre-commit.sh`. Blocks dangerous
+   shell commands before they run.
+3. **Mutation gate** (`scripts/check_mutation.py`, gate **X11** in
+   validate.sh, guaranteed) — mutates changed application source and re-runs
+   the mapped tests, requiring each mutation to make a test fail. Proves
+   tests are meaningful, not just present. Scoped to changed application
+   files, so it is a no-op when nothing changed. Blocks the build on a
+   surviving mutation (vacuous test).
+4. **Tier audit** (`scripts/check_tiers.py --strict`, gate **X12** in
+   validate.sh, guaranteed) — audits `scripts/tier_registry.json`: every
+   declared file must exist, and every `guaranteed` entry whose `wired_via`
+   names a settings.json hook event (e.g. `Stop`, `PreToolUse`) must actually
+   reference its file in a non-empty hook array. Catches the `"Stop": []`
+   class of bug — a guarantee declared but wired to nothing. Exits non-zero
+   in `--strict` on any guaranteed-tier gap.
+
+Each gate follows the universal contract: exit 0 = pass, non-zero = fail,
+and validate.sh blocks the build on non-zero.
+
+### feature_list `verify` schema
+
+Stop verification re-derives a feature's truth from a `verify` block on each
+feature in `.harness/feature_list.json`:
+
+```json
+{
+  "name": "health endpoint returns 200",
+  "passes": true,
+  "verify": { "cmd": "curl -s localhost:8000/health", "expect": "ok" }
+}
+```
+
+- `cmd` (string, required) — a command re-run from the repo root. Must exit 0.
+- `expect` (string, required) — a substring that must appear in `cmd`'s output.
+
+A feature counts as verified ONLY when `passes: true`, a valid `verify` block
+is present, and re-running `cmd` exits 0 with `expect` found in the output.
+A `passes: true` feature with no `verify` block, or whose re-run disagrees,
+blocks the Stop hook as an unverified claim.
+
 ## Progressive Disclosure
 
 | File | When to read |
