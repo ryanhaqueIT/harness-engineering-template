@@ -54,7 +54,7 @@ Read `~/.harness/playbooks/02-generate.md` and execute ALL generation steps:
 
 **5a. Create directories** in the target repo:
 ```
-scripts/ .harness/ .claude/commands/ .claude/hooks/ docs/design-docs/
+scripts/ .harness/ .claude/commands/ .claude/hooks/ .claude/workflows/ docs/design-docs/
 docs/exec-plans/active/ docs/exec-plans/completed/ docs/product-specs/
 docs/references/ docs/generated/ agents/ observability/ .github/workflows/
 ```
@@ -93,6 +93,7 @@ boot_worktree.sh check_ui_legibility.sh check_e2e_deployed.sh validate.sh
 **5h. Copy Claude Code integration** from `~/.harness/`:
 - `.claude/hooks/pre-commit.sh` and `.claude/hooks/post-edit.sh`
 - All `.claude/commands/*.md` files (validate, scorecard, features, ratchet, review, plan, morning-check, entropy)
+- All `.claude/workflows/*.js` files (harness-feature-delivery and any other saved workflows)
 
 **5i. Copy CI workflows** from `~/.harness/.github/workflows/` (ci.yml, claude-review.yml, quality-scan.yml, doc-gardening.yml). Adapt language detection if needed.
 
