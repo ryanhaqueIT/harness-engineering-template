@@ -47,7 +47,7 @@ _gate_layer() {
     case "$1" in
         B1|B2) echo 1;; B3) echo 3;; B4|B5|B6|B7|B8) echo 2;;
         F1|F2|F3|F4|F5) echo 4;; F6|F7|I1|I2) echo 5;; O1) echo 6;;
-        X1|X2|X3|X4|X5|X6|X7|X8|X9|X10|R1) echo 7;; *) echo 0;;
+        X1|X2|X3|X4|X5|X6|X7|X8|X9|X10|X11|X12|R1) echo 7;; *) echo 0;;
     esac
 }
 
@@ -584,6 +584,20 @@ if [ -f "${REPO_ROOT}/scripts/check_tdd.py" ]; then
     check "  [X10] TDD compliance" python3 "${REPO_ROOT}/scripts/check_tdd.py" --summary
 else
     skip "  [X10] TDD compliance" "scripts/check_tdd.py not found"
+fi
+
+# Gate X11: Mutation testing — prove tests are meaningful, not just present
+if [ -f "${REPO_ROOT}/scripts/check_mutation.py" ]; then
+    check "  [X11] Mutation gate" python3 "${REPO_ROOT}/scripts/check_mutation.py" --summary
+else
+    skip "  [X11] Mutation gate" "scripts/check_mutation.py not found"
+fi
+
+# Gate X12: Tier audit — guaranteed gates must actually be wired in
+if [ -f "${REPO_ROOT}/scripts/check_tiers.py" ]; then
+    check "  [X12] Tier audit" python3 "${REPO_ROOT}/scripts/check_tiers.py" --strict
+else
+    skip "  [X12] Tier audit" "scripts/check_tiers.py not found"
 fi
 
 # Gate R1: Ratchet check (quality can only improve, never regress)
