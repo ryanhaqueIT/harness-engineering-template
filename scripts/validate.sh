@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # validate.sh — THE UNIVERSAL GATE. Every line of code passes through here.
 #
-# Total gates: 25 (B1-B8 backend, F1-F7 frontend, I1-I2 infra, X1-X7 cross-stack, O1 observability, R1 ratchet)
+# Total gates: 27 (B1-B8 backend, F1-F7 frontend, I1-I2 infra,
+#                  X1-X9 cross-stack, O1 observability, R1 ratchet)
+#
+# Backend stacks auto-detected: Python, Node, Go, Rust, Java. Gates B1-B8
+# share IDs across stacks (e.g. B1=lint regardless of language) so the
+# dashboard and ratchet stay stack-agnostic.
 #
 # This is the ONLY way to declare code "ready." No exceptions. No shortcuts.
 # Subagents, main agents, humans — everyone runs this before committing.
@@ -42,7 +47,7 @@ _gate_layer() {
     case "$1" in
         B1|B2) echo 1;; B3) echo 3;; B4|B5|B6|B7|B8) echo 2;;
         F1|F2|F3|F4|F5) echo 4;; F6|F7|I1|I2) echo 5;; O1) echo 6;;
-        X1|X2|X3|X4|X5|X6|X7|R1) echo 7;; *) echo 0;;
+        X1|X2|X3|X4|X5|X6|X7|X8|X9|X10|X11|X12|R1) echo 7;; *) echo 0;;
     esac
 }
 
@@ -231,8 +236,88 @@ elif [ -d "$BACKEND_DIR" ] && [ -f "$BACKEND_DIR/package.json" ]; then
     fi
 
     echo ""
+
+# ═══════════════════════════════════════════════════
+# GO BACKEND GATES
+# ═══════════════════════════════════════════════════
+
+elif [ -d "$BACKEND_DIR" ] && [ -f "$BACKEND_DIR/go.mod" ]; then
+    echo "── BACKEND (Go)"
+    cd "$BACKEND_DIR"
+
+    if command -v go &>/dev/null; then
+        check "  [B1] gofmt"        bash -c "test -z \"\$(gofmt -l . 2>/dev/null)\""
+        check "  [B2] go vet"       go vet ./...
+        check "  [B3] go test"      go test ./... -count=1
+        if command -v staticcheck &>/dev/null; then
+            check "  [B7] staticcheck" staticcheck ./...
+        else
+            skip "  [B7] staticcheck" "install honnef.co/go/tools/cmd/staticcheck"
+        fi
+    else
+        skip "BACKEND (Go)" "go not installed"
+        if [ "$_DASHBOARD_ACTIVE" = true ]; then
+            emit_section_skip "go not installed" \
+                "B1:gofmt:1" "B2:go vet:1" "B3:go test:3" "B7:staticcheck:2"
+        fi
+    fi
+
+    echo ""
+
+# ═══════════════════════════════════════════════════
+# RUST BACKEND GATES
+# ═══════════════════════════════════════════════════
+
+elif [ -d "$BACKEND_DIR" ] && [ -f "$BACKEND_DIR/Cargo.toml" ]; then
+    echo "── BACKEND (Rust)"
+    cd "$BACKEND_DIR"
+
+    if command -v cargo &>/dev/null; then
+        check "  [B1] cargo clippy" cargo clippy --all-targets --all-features -- -D warnings
+        check "  [B2] cargo fmt"    cargo fmt -- --check
+        check "  [B3] cargo test"   cargo test --all-features
+        check "  [B7] cargo check"  cargo check --all-targets
+    else
+        skip "BACKEND (Rust)" "cargo not installed"
+        if [ "$_DASHBOARD_ACTIVE" = true ]; then
+            emit_section_skip "cargo not installed" \
+                "B1:clippy:1" "B2:fmt:1" "B3:cargo test:3" "B7:cargo check:2"
+        fi
+    fi
+
+    echo ""
+
+# ═══════════════════════════════════════════════════
+# JAVA BACKEND GATES (Maven or Gradle)
+# ═══════════════════════════════════════════════════
+
+elif [ -d "$BACKEND_DIR" ] && { [ -f "$BACKEND_DIR/pom.xml" ] || [ -f "$BACKEND_DIR/build.gradle" ] || [ -f "$BACKEND_DIR/build.gradle.kts" ]; }; then
+    echo "── BACKEND (Java)"
+    cd "$BACKEND_DIR"
+
+    if [ -f "pom.xml" ] && command -v mvn &>/dev/null; then
+        check "  [B1] mvn checkstyle" mvn -q checkstyle:check
+        check "  [B2] mvn compile"    mvn -q compile
+        check "  [B3] mvn test"       mvn -q test
+        check "  [B7] mvn verify"     mvn -q verify -DskipTests
+    elif command -v gradle &>/dev/null || [ -x "./gradlew" ]; then
+        GW="./gradlew"
+        [ -x "$GW" ] || GW="gradle"
+        check "  [B1] gradle check"   $GW -q check -x test
+        check "  [B2] gradle compile" $GW -q compileJava
+        check "  [B3] gradle test"    $GW -q test
+    else
+        skip "BACKEND (Java)" "mvn/gradle not installed"
+        if [ "$_DASHBOARD_ACTIVE" = true ]; then
+            emit_section_skip "mvn/gradle not installed" \
+                "B1:checkstyle:1" "B2:compile:1" "B3:test:3" "B7:verify:2"
+        fi
+    fi
+
+    echo ""
+
 else
-    skip "BACKEND" "no backend/ directory with requirements.txt, pyproject.toml, or package.json"
+    skip "BACKEND" "no backend/ with requirements.txt, pyproject.toml, package.json, go.mod, Cargo.toml, pom.xml, or build.gradle"
     if [ "$_DASHBOARD_ACTIVE" = true ]; then
         emit_section_skip "no backend directory" \
             "B1:Lint:1" "B2:Format:1" "B3:Tests:3" "B4:Import Boundaries:2" \
@@ -463,6 +548,56 @@ if [ -f "${REPO_ROOT}/scripts/check_spec_compliance.py" ] && [ -f "${REPO_ROOT}/
     check "  [X7] Spec compliance (evidence traceability)" python3 "${REPO_ROOT}/scripts/check_spec_compliance.py"
 else
     skip "  [X7] Spec compliance" "check_spec_compliance.py or feature_list.json not found"
+fi
+
+# Gate X8: Spec quality — pre-build gate on the active ExecPlan
+if [ -f "${REPO_ROOT}/scripts/check_spec_quality.py" ]; then
+    if compgen -G "${REPO_ROOT}/docs/exec-plans/active/*.md" >/dev/null 2>&1; then
+        check "  [X8] Spec quality (active plan)" python3 "${REPO_ROOT}/scripts/check_spec_quality.py" --summary
+    else
+        skip "  [X8] Spec quality" "no active ExecPlan in docs/exec-plans/active/"
+    fi
+else
+    skip "  [X8] Spec quality" "scripts/check_spec_quality.py not found"
+fi
+
+# Gate X9: Loop guard — soft warning if validate→fix is stuck
+if [ -f "${REPO_ROOT}/scripts/loop_guard.py" ] && [ -f "${REPO_ROOT}/.harness/history/runs.json" ]; then
+    # Soft gate: exits 0 even when looping (since validate.sh itself is the loop signal).
+    # Detection is for the orchestrator; we only print the status here.
+    LOOP_OUT=$(python3 "${REPO_ROOT}/scripts/loop_guard.py" check --json 2>/dev/null || echo '{}')
+    if echo "$LOOP_OUT" | python3 -c "import json,sys; d=json.loads(sys.stdin.read() or '{}'); sys.exit(0 if not d.get('loop') else 1)" 2>/dev/null; then
+        check "  [X9] Loop guard" true
+    else
+        # Print the warning but pass the gate so commits aren't blocked.
+        echo -e "── [X9] Loop guard"
+        echo -e "   ${YELLOW}WARN${NC}: same failure fingerprint across recent runs — orchestrator should rescue"
+        echo "$LOOP_OUT" | python3 -c "import json,sys; d=json.loads(sys.stdin.read() or '{}'); print('   fingerprint:', d.get('fingerprint'))" 2>/dev/null || true
+        check "  [X9] Loop guard (warning only)" true
+    fi
+else
+    skip "  [X9] Loop guard" "no run history yet"
+fi
+
+# Gate X10: TDD compliance — every changed impl file must have a test file
+if [ -f "${REPO_ROOT}/scripts/check_tdd.py" ]; then
+    check "  [X10] TDD compliance" python3 "${REPO_ROOT}/scripts/check_tdd.py" --summary
+else
+    skip "  [X10] TDD compliance" "scripts/check_tdd.py not found"
+fi
+
+# Gate X11: Mutation testing — prove tests are meaningful, not just present
+if [ -f "${REPO_ROOT}/scripts/check_mutation.py" ]; then
+    check "  [X11] Mutation gate" python3 "${REPO_ROOT}/scripts/check_mutation.py" --summary
+else
+    skip "  [X11] Mutation gate" "scripts/check_mutation.py not found"
+fi
+
+# Gate X12: Tier audit — guaranteed gates must actually be wired in
+if [ -f "${REPO_ROOT}/scripts/check_tiers.py" ]; then
+    check "  [X12] Tier audit" python3 "${REPO_ROOT}/scripts/check_tiers.py" --strict
+else
+    skip "  [X12] Tier audit" "scripts/check_tiers.py not found"
 fi
 
 # Gate R1: Ratchet check (quality can only improve, never regress)

@@ -57,6 +57,9 @@ GATES = {
     "X5": {"name": "Feature List", "layer": 7},
     "X6": {"name": "Live Features", "layer": 7},
     "X7": {"name": "Spec Compliance", "layer": 7},
+    "X8": {"name": "Spec Quality", "layer": 7},
+    "X9": {"name": "Loop Guard", "layer": 7},
+    "X10": {"name": "TDD Compliance", "layer": 7},
     "R1": {"name": "Ratchet", "layer": 7},
 }
 

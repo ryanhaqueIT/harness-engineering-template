@@ -26,6 +26,10 @@
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pre-commit.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/shell-guard.sh\""
           }
         ]
       },
@@ -77,7 +81,16 @@
         ]
       }
     ],
-    "Stop": [],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/scripts/stop_verification.py\""
+          }
+        ]
+      }
+    ],
     "PreCompact": [
       {
         "hooks": [

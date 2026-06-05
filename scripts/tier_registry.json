@@ -1,0 +1,58 @@
+[
+  {
+    "name": "validate.sh",
+    "file": "scripts/validate.sh",
+    "tier": "guaranteed",
+    "rederives": "re-runs every gate from source on the actual working tree",
+    "wired_via": "validate.sh"
+  },
+  {
+    "name": "pre-commit gate",
+    "file": ".claude/hooks/pre-commit.sh",
+    "tier": "guaranteed",
+    "rederives": "blocks the git commit unless validate.sh exits 0",
+    "wired_via": "pre-commit PreToolUse hook"
+  },
+  {
+    "name": "enforce-locations",
+    "file": ".claude/hooks/enforce-locations.py",
+    "tier": "guaranteed",
+    "rederives": "blocks Write/Edit tool calls that target disallowed file locations",
+    "wired_via": ".claude/settings.json PreToolUse"
+  },
+  {
+    "name": "stop_verification",
+    "file": "scripts/stop_verification.py",
+    "tier": "guaranteed",
+    "rederives": "blocks session Stop unless every feature is verified against the live app",
+    "wired_via": ".claude/settings.json Stop"
+  },
+  {
+    "name": "check_tdd",
+    "file": "scripts/check_tdd.py",
+    "tier": "proxied",
+    "rederives": "",
+    "wired_via": "validate.sh"
+  },
+  {
+    "name": "check_mutation",
+    "file": "scripts/check_mutation.py",
+    "tier": "guaranteed",
+    "rederives": "mutates source and re-runs the suite to re-derive that tests actually fail on real breakage",
+    "wired_via": "validate.sh"
+  },
+  {
+    "name": "shell-guard",
+    "file": ".claude/hooks/shell-guard.sh",
+    "tier": "guaranteed",
+    "rederives": "blocks the Bash tool call before a dangerous command can run",
+    "wired_via": ".claude/settings.json PreToolUse"
+  },
+  {
+    "name": "AGENTS.md golden principles",
+    "file": "AGENTS.md",
+    "tier": "hoped-for",
+    "rederives": "",
+    "wired_via": ""
+  }
+]
