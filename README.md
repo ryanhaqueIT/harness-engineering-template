@@ -235,6 +235,78 @@ Single-model review has a known blind spot: the same model that wrote the code i
 
 The codex integration is gated by `Skill("codex:rescue")` — if codex isn't installed, the skill offers to install it; if codex can't be reached, the agent falls back with `CONFIDENCE: low` so the orchestrator knows to weigh it lightly.
 
+## Dynamic Workflow: Deterministic Feature Delivery
+
+`/ship` is powerful, but its orchestration logic lives in Claude's context window — the model reads `ship.md` and decides each step, which can vary across runs. The **`harness-feature-delivery` dynamic workflow** solves this by moving the orchestration into code: a JavaScript script the runtime executes deterministically, the same way every time, regardless of context length or model state.
+
+The distinction matters in practice. `/ship` is model-as-orchestrator. The dynamic workflow is code-as-orchestrator — `pipeline(milestones)` fans out automatically, milestones overlap (M2 starts while M1 validates), and no step can be skipped because the runtime enforces the sequence, not the model's memory of what it was supposed to do.
+
+### How to run it
+
+After `/bootstrap`, the workflow is ready in `.claude/workflows/`. Trigger it two ways:
+
+**Natural language:**
+```
+use the harness-feature-delivery workflow to add OAuth login with Google
+```
+
+**Via the `/workflows` UI:**
+```
+/workflows
+```
+Select `harness-feature-delivery`, enter the feature description, approve the phases, and it runs in the background while your session stays responsive.
+
+### What it does
+
+The workflow drives four phases with the harness gates enforcing at every boundary:
+
+```
+DESIGN  → PRD + ERD written in parallel
+        → Codex adversarial spec review (different model critiques the spec)
+        → check_spec_quality.py gate — blocks vague or incomplete specs
+        → feature_list.json seeded and hash-locked (X11 detects step edits)
+        → ExecPlan written with milestones
+        → E2E test skill generated for this feature (Playwright MCP + real APIs)
+
+BUILD   → pipeline(milestones) — no barrier, milestones overlap
+          Per milestone:
+            [Codex] writes failing tests  ← cross-model TDD
+            [Claude] implements against them
+            validate.sh static gates loop until exit 0
+            fix agent (max 3 attempts) → rescue (parallel researcher + codex-reviewer) → escalate
+
+VERIFY  → Boot app
+        → Three testing layers in sequence:
+            Layer 1: validate.sh full suite with RUN_LIVE=true (29 gates)
+            Layer 2: X6 live feature check (real HTTP + Playwright)
+            Layer 3: Generated E2E skill (non-deterministic — real external systems,
+                     timing, Playwright MCP — distinguishes code bugs from env noise)
+        → X11 mutation gate (tests must fail on mutated code)
+        → stop_verification re-derives every passes:true claim independently
+        → X12 tier audit (no guaranteed gate has silently become unwired)
+
+SHIP    → R1 ratchet check
+        → Conventional commit with full provenance
+```
+
+### Three testing layers
+
+The workflow separates testing into three layers with different failure semantics:
+
+| Layer | What runs | Failure means |
+|---|---|---|
+| **1 — Deterministic** | `validate.sh` static gates (B1–B8, F1–F7, X1–X10, R1) | Code is wrong — fix it |
+| **2 — Semi-deterministic** | X6 live feature check (real HTTP, requires booted app) | Usually code is wrong |
+| **3 — Non-deterministic** | Generated E2E skill (Playwright MCP, real external APIs) | May be code bug OR environment noise (e.g. test API throttling) — must distinguish |
+
+Layer 3 is generated during the Design phase from the PRD acceptance criteria — a feature-specific `.claude/commands/test-<feature>.md` that knows exactly what to call, assert, and how to interpret environmental limitations.
+
+### Getting the workflow in a new repo
+
+The workflow ships with bootstrap. Re-running `/bootstrap` on an existing repo updates it automatically — bootstrap hard-resets `~/.harness` to latest master and copies `.claude/workflows/*.js` into the target repo. No extra steps needed.
+
+---
+
 ## Key Capabilities
 
 ### Feature List Gate (PRD Enforcement)
@@ -326,8 +398,9 @@ harness-engineering-template/
     reviewer.md             # General code review agent
     entropy-cleaner.md      # Entropy detection agent
   .claude/
-    commands/               # Slash commands (/validate, /bootstrap, /scorecard, etc.)
-    hooks/                  # Pre-commit and post-edit hooks
+    commands/               # Slash commands (/validate, /bootstrap, /ship, /scorecard, etc.)
+    hooks/                  # Pre-commit, post-edit, shell-guard, loop-detection
+    workflows/              # Dynamic workflow scripts (harness-feature-delivery.js)
     settings.json           # Permissions and hook configuration
   .github/workflows/
     ci.yml                  # CI pipeline (all gates)
